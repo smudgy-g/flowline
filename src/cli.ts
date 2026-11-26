@@ -4,6 +4,7 @@
 //
 //   frankenstein setup                        prepare this repository: .factory/config.json and an adapter stub
 //   frankenstein board                        serve the board on http://localhost:4111/board
+//   frankenstein model <role> <provider/model>  switch planner/coder/review/tester, even while the board runs
 //   frankenstein start <item>                 start a run for a work item
 //   frankenstein status [<item>]              list runs, or show what one is waiting for
 //   frankenstein plan <item> --summary S --tests T   driver: record the agreed plan
@@ -50,7 +51,7 @@ async function confirm(v: RunView, issue: string): Promise<true> {
 async function usage() {
   const source = await readFile(new URL(import.meta.url.replace(/\.js$/, '.ts')), 'utf8').catch(() =>
     readFile(new URL(import.meta.url), 'utf8'))
-  console.log(source.split('\n').filter(l => l.startsWith('//')).slice(0, 19).join('\n').replaceAll('// ', '').replace(/^\/\//gm, ''))
+  console.log(source.split('\n').filter(l => l.startsWith('//')).slice(0, 20).join('\n').replaceAll('// ', '').replace(/^\/\//gm, ''))
 }
 
 async function main() {
@@ -60,6 +61,13 @@ async function main() {
   // imported until after it: every import below is deferred for that reason.
   if (command === 'setup') return (await import('./setup.ts')).setup(values.base)
   if (!command || command === 'help' || command === '--help') return usage()
+  if (command === 'model') {
+    if (!['planner', 'coder', 'review', 'tester'].includes(issueArg ?? '') || !rest[0] || rest.length !== 1)
+      throw new Error('Usage: frankenstein model <planner|coder|review|tester> <provider/model>');
+    const { setModel } = await import('./config.ts');
+    await setModel(issueArg as 'planner' | 'coder' | 'review' | 'tester', rest[0]);
+    return console.log(`${issueArg} will use ${rest[0]} on its next call. Retry a waiting run from the board; no restart needed.`);
+  }
   if (command === 'board') {
     const { url } = await (await import('./server.ts')).startBoard()
     const { config, projectRoot } = await import('./config.ts')

@@ -85,6 +85,20 @@ test('state belongs to one repo and one tracker', async t => {
   await assert.rejects(checkOwner(), /belongs to other\/repo via node trackers\/github\.mjs/);
 });
 
+test('model switches are read from the project at each call without restarting the board', async t => {
+  const { projectRoot, config, currentModels, setModel } = await import('../src/config.ts');
+  const file = join(projectRoot, '.factory/config.json');
+  const original = await readFile(file, 'utf8');
+  t.after(() => writeFile(file, original));
+  assert.equal(currentModels().planner, undefined);
+  await setModel('planner', 'anthropic/claude-sonnet-5-5');
+  assert.equal(currentModels().planner, 'anthropic/claude-sonnet-5-5');
+  assert.equal(config.base, 'main', 'other settings remain pinned for the board lifetime');
+  await writeFile(file, JSON.stringify({ ...JSON.parse(original), models: { planner: 'openai-codex/gpt-6.2-sol' } }));
+  assert.equal(currentModels().planner, 'openai-codex/gpt-6.2-sol');
+  await assert.rejects(setModel('other' as 'planner', 'x'));
+});
+
 test('only "all" and item run ids can be paused', async () => {
   const { setPaused, paused } = await import('../src/ops.ts');
   const { runIdFor } = await import('../src/runs.ts');

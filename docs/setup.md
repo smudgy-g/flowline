@@ -69,7 +69,22 @@ switching accounts. Never paste keys or the contents of `auth.json` into a work 
 
 A provider returning `429 rate_limit_error` means it is refusing requests *now*; signing in again may not reset
 its limit. You can wait for the limit to reset, sign in with another account, or choose another model/provider.
-The run remains at its error gate until you press **Retry**; reauthentication does not approve anything.
+The run remains at its error gate until you press **Retry**; changing models does not approve anything.
+
+To switch the model for one role **while the board is still running**:
+
+```sh
+pi --list-models                                 # choose a model your account can use
+frankenstein model planner openai-codex/gpt-6.2-sol
+# The project now has "models": { "planner": "openai-codex/gpt-6.2-sol" } in .factory/config.json.
+# Return to the board and press Retry on the paused card. No board restart or new run.
+```
+
+Use `coder`, `review`, or `tester` in place of `planner` at their respective steps. Only the `models` section is
+re-read at each agent call; other config changes still need a board restart. Models are ordinary project config,
+not credentials: choose a provider you have already signed into. An uncommitted change here affects the host's
+next agent call without changing the pinned acceptance inputs. Commit the config later if the new model should
+be the team's default.
 
 ```sh
 pi auth check --provider anthropic       # checks credentials, not remaining quota
@@ -77,12 +92,11 @@ pi auth logout anthropic                  # only if you want to switch accounts
 pi auth login anthropic                   # interactive, stored only on the host
 ```
 
-For a different provider/model, run `pi --list-models`, sign in via `pi auth login <provider>`, then set the
-relevant role before launching the board, for example `FACTORY_MODEL_PLANNER=provider/model frankenstein board`.
-The planner's default is `anthropic/claude-opus-5-5`; the coder, review and tester each have separate defaults.
-**Restart the board after changing a model environment variable.** Logging into another account for the *same*
-provider is read afresh at the next Pi call; then press **Retry** on the card. Do not edit project files or clear
-run state to switch credentials.
+To use a different provider, sign in via `pi auth login <provider>` and set the role with `frankenstein model`.
+The planner defaults to `anthropic/claude-opus-5-5`; coder, review and tester each have separate defaults.
+`FACTORY_MODEL_<ROLE>` environment variables are still available, but changing one requires a board restart; a
+model set in `.factory/config.json` takes precedence. Logging into another account for the *same* provider is
+read afresh at the next Pi call. Neither change requires clearing run state.
 
 ### Git over SSH from the board
 
@@ -279,5 +293,5 @@ Every one of these came up during a real setup.
 | `Acceptance inputs must be on <base>` | The baseline commit is not on the base branch | Push the fix to `base` first |
 | `UAT tested <sha>, expected <sha>` | The adapter reported a commit other than `$COMMIT` | Echo `$COMMIT` in the verdict |
 | `Sandbox: missing` on a card | The sandbox was removed under a running item | **Recreate sandbox** on the card, then **Retry** |
-| `plan failed … 429 rate_limit_error` | The selected provider is throttling the account, not necessarily an expired login | Wait, change accounts with `pi auth login`, or change `FACTORY_MODEL_PLANNER`; then **Retry** |
+| `plan failed … 429 rate_limit_error` | The selected provider is throttling the account, not necessarily an expired login | Wait, change accounts with `pi auth login`, or `frankenstein model planner provider/model`; then **Retry** |
 | SSH key passphrase prompts, or `Permission denied (publickey)` from a board run | The board process has no unlocked key in its SSH agent | `ssh-add` before `frankenstein board`; test `git ls-remote origin HEAD` in the same shell |

@@ -3,6 +3,7 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
+import { rename, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -39,8 +40,14 @@ const SkillName = z.string().regex(/^[a-z0-9-]+$/);
 const Command = z.tuple([z.string().trim().min(1)]).rest(z.string());
 /** A path inside the project, with no parent-directory escape. */
 const ProjectPath = z.string().regex(/^(?!.*(?:^|\/)\.\.(?:\/|$))[a-zA-Z0-9_.][a-zA-Z0-9_./-]*$/);
+const Role = z.enum(["planner", "coder", "review", "tester"]);
+const Model = z.string().trim().min(1);
+const Models = z.strictObject({ planner: Model.optional(), coder: Model.optional(), review: Model.optional(), tester: Model.optional() });
+export type ModelRole = z.infer<typeof Role>;
 
 const Config = z.strictObject({
+  /** Role-specific models. Only this section is re-read for each agent call; no board restart is needed. */
+  models: Models.prefault({}),
   /** What the tracker calls this project, e.g. a GitHub `owner/name`. Defaults to the `origin` remote. */
   repo: z.string().min(1).optional(),
   /** The branch every task builds on and a finished change is aimed at. */
@@ -115,7 +122,23 @@ const Config = z.strictObject({
   }).prefault({}),
 });
 
-const raw = Config.parse(JSON.parse(readFileSync(join(projectRoot, ".factory/config.json"), "utf8")));
+const configFile = join(projectRoot, ".factory/config.json");
+const raw = Config.parse(JSON.parse(readFileSync(configFile, "utf8")));
+
+/** Reload only model choices: changing base, tracker or sandbox settings still requires a board restart. */
+export function currentModels() {
+  return Models.parse(JSON.parse(readFileSync(configFile, "utf8")).models ?? {});
+}
+
+export async function setModel(role: ModelRole, model: string) {
+  Role.parse(role);
+  Model.parse(model);
+  const profile = JSON.parse(readFileSync(configFile, "utf8"));
+  profile.models = { ...currentModels(), [role]: model };
+  const temp = `${configFile}.${process.pid}.tmp`;
+  await writeFile(temp, `${JSON.stringify(profile, null, 2)}\n`);
+  await rename(temp, configFile);
+}
 
 const git = (...args: string[]) =>
   execFileSync("git", args, { cwd: projectRoot, encoding: "utf8" }).trim();

@@ -18,7 +18,7 @@ import {
 import { z } from "zod";
 import { basename, dirname, join, matchesGlob } from "node:path";
 import { promisify } from "node:util";
-import { config, installRoot, projectRoot, stateRoot } from "./config.ts";
+import { config, currentModels, installRoot, projectRoot, stateRoot } from "./config.ts";
 import { sandbox } from './sandbox.ts';
 import { projectCommands } from './project-commands.ts';
 import { taskGitEnv } from './worktree-git.ts';
@@ -548,6 +548,7 @@ export const realOps: Ops = {
 
   async runPi(worktree, role, prompt) {
     await checkWorktree(worktree);
+    const selected = currentModels()[role];
     return run(
       installRoot,
       "node",
@@ -561,6 +562,7 @@ export const realOps: Ops = {
         FACTORY_CODER_SKILLS: JSON.stringify(config.skills.coder),
         FACTORY_STATE_ROOT: stateRoot,
         FACTORY_PROJECT: projectRoot,
+        ...(selected ? { [`FACTORY_MODEL_${role.toUpperCase()}`]: selected } : {}),
       },
     );
   },

@@ -33,6 +33,7 @@ Each work item runs in **its own Docker Sandbox** (`sbx`): a microVM with its ow
 - `paths.tests` limits where the tester role may write, `paths.protected` blocks changes (keep `.factory/**` there), `paths.sensitive` flags them for you at the approval gate.
 - `tracker` names where work items come from: `local` (the default) keeps them as Markdown in your repo under `.factory/items/<id>.md` and needs no account or network; `github` uses issues and draft PRs. Write your own rather than changing factory code — [the contract](docs/tracker.md) is twelve verbs.
 - `skills.packs` are copied into each worktree; a bare name is one of the factory's, a path is yours ([guide](skills/README.md)).
+- `models` selects planner/coder/review/tester models. Change one during a paused run with `frankenstein model planner provider/model`, then press **Retry**; only model choices hot-reload, so the board need not restart ([guide](docs/setup.md#switching-model-accounts-while-a-run-waits)).
 
 [`examples/go.factory.json`](examples/go.factory.json) is a worked profile.
 
