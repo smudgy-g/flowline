@@ -985,7 +985,7 @@
         c.startAt
           .map(
             (s, i) =>
-              `<button class="btn${i ? "" : " primary"}" onclick="startNumber('${esc(s.at)}', ${c.issue})">${label}${c.many ? ` on ${esc(s.factory)}` : ""}</button>`,
+              `<button class="btn${i ? "" : " primary"}" onclick="startItem('${esc(s.at)}', '${esc(c.issue)}')">${label}${c.many ? ` on ${esc(s.factory)}` : ""}</button>`,
           )
           .join("");
       // A run keeps the UAT journeys it started with; when the factory's changed since, approving can move it onto them.
@@ -1188,8 +1188,8 @@
         };
         await post(`${c.at}/board/act/${c.issue}`, body);
       }
-      async function startNumber(at, issue) {
-        await post(`${at}/board/start/${issue}`, {});
+      async function startItem(at, item) {
+        await post(`${at}/board/start/${encodeURIComponent(item)}`, {});
       }
       async function post(url, body) {
         document
