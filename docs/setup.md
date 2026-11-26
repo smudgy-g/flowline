@@ -220,6 +220,10 @@ The adapter gets `$REPO`, `$REF`, `$COMMIT`, `$INPUTS` (its own directory, read-
 {"commit": "<the SHA from $COMMIT>", "pass": true, "detail": "what was checked, or what failed"}
 ```
 
+[`examples/acceptance/node-project.sh`](../examples/acceptance/node-project.sh) is the adapter this walkthrough
+used: it unpacks Node from `$ASSETS`, unpacks the commit, and asserts the item's acceptance criteria against the
+published function.
+
 Exit zero for any completed verdict, including a failure. Exit nonzero only for an infrastructure problem — then
 the run waits for you to fix it rather than recording a verdict. A verdict naming the wrong commit is rejected.
 
