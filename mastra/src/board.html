@@ -866,7 +866,7 @@
         if (c.kind === "done")
           return [
             c.merged
-              ? `<div class="why green"><b>Merged into {{base}}.</b> Clean up closes the issue and removes the card. The PR and sub-issues stay on GitHub.</div>${membersBlock(s)}`
+              ? `<div class="why green"><b>Accepted into {{base}}.</b> Clean up closes the work item and removes the card. The delivered change and its members stay in your tracker.</div>${membersBlock(s)}`
               : `<div class="why green">Every PR is merged into <code>${esc(s?.branch)}</code>, and the draft PR into {{base}} is open. Review and merge it on GitHub.</div>${membersBlock(s)}`,
             (c.merged
               ? `<button class="btn primary" onclick="cleanUp(false)">Clean up</button>`
@@ -896,7 +896,7 @@
         }
         if (c.column === "Items")
           return [
-            `<div class="ask">Not started. Starting reads the issue and sets up a run; then you agree a plan.</div>`,
+            `<div class="ask">Not started. Starting reads the work item and sets up a run; then you agree a plan.</div>`,
             startButtons(c, "Start"),
           ];
         if (c.kind === "running")
@@ -910,7 +910,7 @@
         if (c.kind === "done")
           return [
             c.merged
-              ? `<div class="why green"><b>Merged.</b> Clean up removes the worktree, its tmux window and the local branch, and closes the issue with a link to the PR. The PR stays on GitHub.</div>${planBlock(c.lane?.plan)}`
+              ? `<div class="why green"><b>Accepted.</b> Clean up removes the worktree, the sandbox and the local branch, and closes the work item with a link to the delivered change.</div>${planBlock(c.lane?.plan)}`
               : `<div class="why green">Acceptance passed and the change is delivered. Review and merge it yourself; the factory never merges. Once your tracker reports it accepted, you can clean up here.</div>${planBlock(c.lane?.plan)}`,
             (c.merged
               ? `<button class="btn primary" onclick="cleanUp(false)">Clean up</button>`
@@ -980,7 +980,7 @@
             : "",
         ];
       }
-      // One button per factory that lists the issue; the first is the default.
+      // One button per factory that lists the work item; the first is the default.
       const startButtons = (c, label) =>
         c.startAt
           .map(
