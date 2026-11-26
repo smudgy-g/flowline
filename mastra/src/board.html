@@ -551,7 +551,7 @@
       <nav class="side">
         <a
           class="btn primary"
-          href="https://github.com/ColoniaTech/colonia_client/issues/new?template=factory.yml"
+          href="https://github.com/{{repo}}/issues/new?template=factory.yml"
           target="_blank"
           >New issue</a
         >
@@ -561,7 +561,7 @@
         >
         <a
           class="btn"
-          href="https://github.com/ColoniaTech/colonia_client/issues/new?template=factory-stack.yml"
+          href="https://github.com/{{repo}}/issues/new?template=factory-stack.yml"
           target="_blank"
           >New stack</a
         >
@@ -858,8 +858,8 @@
         if (c.kind === "done")
           return [
             c.merged
-              ? `<div class="why green"><b>Merged into staging.</b> Clean up closes the issue and removes the card. The PR and sub-issues stay on GitHub.</div>${membersBlock(s)}`
-              : `<div class="why green">Every PR is merged into <code>${esc(s?.branch)}</code>, and the draft PR into staging is open. Review and merge it on GitHub.</div>${membersBlock(s)}`,
+              ? `<div class="why green"><b>Merged into {{base}}.</b> Clean up closes the issue and removes the card. The PR and sub-issues stay on GitHub.</div>${membersBlock(s)}`
+              : `<div class="why green">Every PR is merged into <code>${esc(s?.branch)}</code>, and the draft PR into {{base}} is open. Review and merge it on GitHub.</div>${membersBlock(s)}`,
             (c.merged
               ? `<button class="btn primary" onclick="cleanUp(false)">Clean up</button>`
               : "") +

@@ -9,6 +9,7 @@
 // A step that fails unexpectedly also suspends (kind 'error'), so a factory fix and `fx retry` continue the run.
 import { createStep, createWorkflow } from "@mastra/core/workflows";
 import { z } from "zod";
+import { config } from "./config.ts";
 import {
   blockingFindings,
   breakdownPrompt,
@@ -86,10 +87,13 @@ export type Ops = {
 };
 
 export const MAX_BUILD_CYCLES = 6;
-/** What a task builds on: staging, or a stack's branch. Checked, since it becomes a git argument. */
+/** What a task builds on: the configured base, or a stack's branch. Checked, since it becomes a git argument. */
 export const Base = z
   .string()
-  .regex(/^(staging|stack\/[a-z0-9][a-z0-9-]*)$/, "staging or stack/<name>");
+  .refine(
+    (b) => b === config.base || /^stack\/[a-z0-9][a-z0-9-]*$/.test(b),
+    `${config.base} or stack/<name>`,
+  );
 
 const IssueSchema = z.object({
   number: z.number(),
@@ -152,7 +156,7 @@ export const LaneState = z.object({
 export type LaneState = z.infer<typeof LaneState>;
 export const initialState = (): LaneState => ({
   workItem: "",
-  base: "staging",
+  base: config.base,
   baseline: "",
   worktree: "",
   feedback: "",
@@ -308,7 +312,7 @@ export const describeReviews = (r: Reviews) =>
 
 const Input = z.object({
   issue: z.number().int().positive(),
-  base: Base.default("staging"),
+  base: Base.default(config.base),
 });
 
 export function createFastLane(ops: Ops) {
@@ -399,7 +403,7 @@ export function createFastLane(ops: Ops) {
           split: { parts: parts.slice(1), created: [] },
         };
         await setState(state);
-        if (state.base !== "staging")
+        if (state.base !== config.base)
           await ops.recordSplit(state.base, state.issue!.number, parts.slice(1));
         await ops.record(
           state.worktree,
@@ -408,7 +412,7 @@ export function createFastLane(ops: Ops) {
         );
       }
       // Restart-safe: issues for the other parts are created one at a time and saved, so none is made twice.
-      if (state.base === "staging" && state.split) {
+      if (state.base === config.base && state.split) {
         const { parts: rest, created } = state.split;
         for (const part of rest.slice(created.length)) {
           const { title, body } = splitIssue(
@@ -1009,7 +1013,7 @@ export function createFastLane(ops: Ops) {
   return createWorkflow({
     id: "fast-lane",
     description:
-      "Colonia fast lane: GitHub issue → approved plan → tested, reviewed, approved change → UAT → draft PR",
+      "Fast lane: GitHub issue → approved plan → tested, reviewed, approved change → UAT → draft PR",
     inputSchema: Input,
     outputSchema: z.object({ prUrl: z.string() }),
     stateSchema: LaneState,

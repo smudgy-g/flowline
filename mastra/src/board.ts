@@ -26,6 +26,7 @@ import {
   syncVm,
 } from "./ops.ts";
 import { sha256 } from "./rules.ts";
+import { config } from "./config.ts";
 import type { StackState } from "./stack.ts";
 import {
   forget,
@@ -168,7 +169,7 @@ async function stackCard(factory: Factory, v: RunView): Promise<Card> {
     return {
       ...base,
       kind: "done",
-      status: "Draft PR to staging open",
+      status: `Draft PR to ${config.base} open`,
       prUrl: v.prUrl,
     };
   if (v.status === "running")
@@ -381,7 +382,11 @@ export function boardRoutes(factory: () => Factory) {
       method: "GET",
       requiresAuth: false,
       handler: async (c) =>
-        c.html(await readFile(`${factoryRoot}/mastra/src/board.html`, "utf8")),
+        c.html(
+          (await readFile(`${factoryRoot}/mastra/src/board.html`, "utf8"))
+            .replaceAll("{{repo}}", config.repo)
+            .replaceAll("{{base}}", config.base),
+        ),
     }),
 
     registerApiRoute("/board/data", {

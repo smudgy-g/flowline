@@ -1,0 +1,9 @@
+{
+  "repo": "ColoniaTech/colonia_client",
+  "base": "staging",
+  "workspace": "..",
+  "checkout": "client/staging",
+  "worktrees": "client/worktrees",
+  "skills": "agents/.agents/skills",
+  "readable": ["supabase/staging"]
+}

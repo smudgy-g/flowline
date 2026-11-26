@@ -14,9 +14,9 @@ import {
   rm,
   writeFile,
 } from "node:fs/promises";
-import { basename, dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { basename, dirname } from "node:path";
 import { promisify } from "node:util";
+import { config, factoryRoot } from "./config.ts";
 import type { Ops } from "./fast-lane.ts";
 import type { StackOps } from "./stack.ts";
 import {
@@ -30,17 +30,14 @@ import {
   type UatReport,
 } from "./rules.ts";
 
-/** The factory checkout this code runs from (FACTORY_ROOT when bundled by `mastra dev`). */
-export const factoryRoot =
-  process.env.FACTORY_ROOT ??
-  resolve(dirname(fileURLToPath(import.meta.url)), "../..");
+export { factoryRoot } from "./config.ts";
 
-const colonia = resolve(factoryRoot, "..");
-const client = `${colonia}/client/staging`;
-const worktrees = `${colonia}/client/worktrees/`;
+const workspace = config.workspace;
+const client = config.checkout;
+const worktrees = config.worktrees;
 const workmuxConfig = `${client}/.workmux.agent-task.yaml`;
-const projectSkills = `${colonia}/agents/.agents/skills`;
-export const issueRepo = "ColoniaTech/colonia_client";
+const projectSkills = config.skills;
+export const issueRepo = config.repo;
 
 /**
  * This factory's name, when more than one runs (the laptop's VM, the M1's): `~/.config/factory/name` in its VM,
@@ -57,7 +54,7 @@ const claimLabel = `factory:${factoryName}`;
 
 async function claim(number: number): Promise<void> {
   const labels = (
-    await run(colonia, "gh", [
+    await run(workspace, "gh", [
       "issue",
       "view",
       String(number),
@@ -76,7 +73,7 @@ async function claim(number: number): Promise<void> {
     throw new Error(`#${number} is already running on ${other.slice("factory:".length)}`);
   if (labels.includes(claimLabel)) return;
   // --force: creates the label the first time, and is a no-op after.
-  await run(colonia, "gh", [
+  await run(workspace, "gh", [
     "label",
     "create",
     claimLabel,
@@ -88,7 +85,7 @@ async function claim(number: number): Promise<void> {
     `Running on the ${factoryName} factory`,
     "--force",
   ]);
-  await run(colonia, "gh", [
+  await run(workspace, "gh", [
     "issue",
     "edit",
     String(number),
@@ -101,7 +98,7 @@ async function claim(number: number): Promise<void> {
 
 /** An abandoned issue goes back to the Issues column of every factory. */
 export async function releaseIssue(number: number): Promise<void> {
-  await run(colonia, "gh", [
+  await run(workspace, "gh", [
     "issue",
     "edit",
     String(number),
@@ -143,7 +140,7 @@ const exec = promisify(execFile);
  * to start. Each worktree follows its own pin, so a Node bump on staging needs nothing here.
  */
 async function toolchain(cwd: string): Promise<Record<string, string>> {
-  if (!cwd.startsWith(`${colonia}/client/`)) return {};
+  if (cwd !== client && !cwd.startsWith(worktrees)) return {};
   const { stdout } = await exec("mise", ["bin-paths"], { cwd, env: inherited });
   return {
     PATH: [...stdout.trim().split("\n").filter(Boolean), inherited.PATH].join(
@@ -310,13 +307,13 @@ async function checkWorktree(worktree: string): Promise<void> {
 }
 
 /**
- * The branch a task builds on and its draft PR targets: `staging`, or a stack's `stack/<name>`. provision records
+ * The branch a task builds on and its draft PR targets: the configured base, or a stack's `stack/<name>`. provision records
  * it on the task branch, so everything that compares against it (gates, digests, the board's diff, Pi) agrees.
  */
 async function baseOf(worktree: string): Promise<string> {
   const branch = await run(worktree, "git", ["branch", "--show-current"]);
   return run(worktree, "git", ["config", `branch.${branch}.factoryBase`]).catch(
-    () => "staging",
+    () => config.base,
   );
 }
 const forkPoint = async (worktree: string) =>
@@ -381,7 +378,7 @@ async function inspect(worktree: string) {
   const migrations = before.filter(isMigrationPath);
   if (migrations.length)
     throw new Error(
-      `Migration/schema change stopped: ${migrations.join(", ")}. Migrations belong in ${colonia}/supabase/staging`,
+      `Migration/schema change stopped: ${migrations.join(", ")}. Migrations are not made by a task${config.readable.length ? `; they belong in ${config.readable.join(" or ")}` : ""}`,
     );
   const present = [];
 
@@ -517,7 +514,7 @@ export async function factoryIssues(): Promise<
 > {
   const labelled = async (label: string) =>
     JSON.parse(
-      await run(colonia, "gh", [
+      await run(workspace, "gh", [
         "issue",
         "list",
         "-R",
@@ -553,7 +550,7 @@ export async function factoryIssues(): Promise<
 
 /** OPEN, MERGED or CLOSED, for a pull request URL. */
 export async function prState(url: string): Promise<string> {
-  return run(colonia, "gh", [
+  return run(workspace, "gh", [
     "pr",
     "view",
     url,
@@ -602,7 +599,7 @@ export async function closeIssue(
   number: number,
   comment: string,
 ): Promise<void> {
-  const state = await run(colonia, "gh", [
+  const state = await run(workspace, "gh", [
     "issue",
     "view",
     String(number),
@@ -614,7 +611,7 @@ export async function closeIssue(
     ".state",
   ]);
   if (state === "OPEN")
-    await run(colonia, "gh", [
+    await run(workspace, "gh", [
       "issue",
       "close",
       String(number),
@@ -627,7 +624,7 @@ export async function closeIssue(
 
 /** Issue authors (and commenters) whose text may reach an agent: the GitHub token's owner, plus FACTORY_ISSUE_AUTHORS. */
 async function trustedAuthors(): Promise<string[]> {
-  const owner = await run(colonia, "gh", ["api", "user", "--jq", ".login"]);
+  const owner = await run(workspace, "gh", ["api", "user", "--jq", ".login"]);
   return [
     owner,
     ...(process.env.FACTORY_ISSUE_AUTHORS ?? "")
@@ -642,7 +639,7 @@ export const realOps: Ops = {
   claim,
   async readIssue(number) {
     const raw = JSON.parse(
-      await run(colonia, "gh", [
+      await run(workspace, "gh", [
         "issue",
         "view",
         String(number),
@@ -781,7 +778,10 @@ export const realOps: Ops = {
       factoryRoot,
       "node",
       [`${factoryRoot}/scripts/factory-pi.mjs`, worktree, role, prompt],
-      { FACTORY_BASE: `origin/${await baseOf(worktree)}` },
+      {
+        FACTORY_BASE: `origin/${await baseOf(worktree)}`,
+        FACTORY_READABLE: JSON.stringify(config.readable),
+      },
     );
   },
 
@@ -801,7 +801,7 @@ export const realOps: Ops = {
 
   async createIssue(title, body) {
     return issueNumberOf(
-      await run(colonia, "gh", [
+      await run(workspace, "gh", [
         "issue",
         "create",
         "--repo",
@@ -1010,7 +1010,7 @@ export const realOps: Ops = {
   },
 
   async commentOnIssue(number, text) {
-    await run(colonia, "gh", [
+    await run(workspace, "gh", [
       "issue",
       "comment",
       String(number),
@@ -1034,7 +1034,7 @@ const splitFile = (branch: string, member: number) =>
 
 /** GitHub's internal id of an issue, which the sub-issue API takes. */
 const issueId = (number: number) =>
-  run(colonia, "gh", ["api", `repos/${issueRepo}/issues/${number}`, "--jq", ".id"]);
+  run(workspace, "gh", ["api", `repos/${issueRepo}/issues/${number}`, "--jq", ".id"]);
 
 export const realStackOps: StackOps = {
   paused,
@@ -1051,18 +1051,18 @@ export const realStackOps: StackOps = {
   async createStackBranch(branch) {
     if (await run(client, "git", ["ls-remote", "--heads", "origin", branch]))
       return;
-    await run(client, "git", ["fetch", "origin", "staging"]);
+    await run(client, "git", ["fetch", "origin", config.base]);
     await run(client, "git", [
       "push",
       "origin",
-      `refs/remotes/origin/staging:refs/heads/${branch}`,
+      `refs/remotes/origin/${config.base}:refs/heads/${branch}`,
     ]);
   },
 
   async createSubIssue(parent, title, body, after) {
     // No `factory` label: a member must not show up on the board as a task anyone could start on staging.
     const number = issueNumberOf(
-      await run(colonia, "gh", [
+      await run(workspace, "gh", [
         "issue",
         "create",
         "--repo",
@@ -1074,7 +1074,7 @@ export const realStackOps: StackOps = {
       ]),
     );
     const id = await issueId(number);
-    await run(colonia, "gh", [
+    await run(workspace, "gh", [
       "api",
       "-X",
       "POST",
@@ -1083,7 +1083,7 @@ export const realStackOps: StackOps = {
       `sub_issue_id=${id}`,
     ]);
     if (after)
-      await run(colonia, "gh", [
+      await run(workspace, "gh", [
         "api",
         "-X",
         "PATCH",
@@ -1097,7 +1097,7 @@ export const realStackOps: StackOps = {
   },
 
   async retitleIssue(number, title) {
-    await run(colonia, "gh", [
+    await run(workspace, "gh", [
       "issue",
       "edit",
       String(number),
@@ -1109,7 +1109,7 @@ export const realStackOps: StackOps = {
   },
 
   async updateIssueSection(number, name, text) {
-    const body = await run(colonia, "gh", [
+    const body = await run(workspace, "gh", [
       "issue",
       "view",
       String(number),
@@ -1120,7 +1120,7 @@ export const realStackOps: StackOps = {
       "--jq",
       ".body",
     ]);
-    await run(colonia, "gh", [
+    await run(workspace, "gh", [
       "issue",
       "edit",
       String(number),
@@ -1134,9 +1134,9 @@ export const realStackOps: StackOps = {
   async withReviewCheckout(work) {
     // A detached checkout of GitHub's staging under client/worktrees/, so runPi's worktree checks hold; never
     // client/staging itself.
-    await run(client, "git", ["fetch", "origin", "staging"]);
+    await run(client, "git", ["fetch", "origin", config.base]);
     const dir = `${worktrees}review-${Date.now()}`;
-    await run(client, "git", ["worktree", "add", "--detach", dir, "origin/staging"]);
+    await run(client, "git", ["worktree", "add", "--detach", dir, `origin/${config.base}`]);
     try {
       await mkdir(`${dir}/.agents`, { recursive: true });
       await run(client, "cp", ["-RL", projectSkills, `${dir}/.agents/skills`]);
@@ -1153,7 +1153,7 @@ export const realStackOps: StackOps = {
 
   async issueOpen(number) {
     return (
-      (await run(colonia, "gh", [
+      (await run(workspace, "gh", [
         "issue",
         "view",
         String(number),
@@ -1178,7 +1178,7 @@ export const realStackOps: StackOps = {
       "--head",
       branch,
       "--base",
-      "staging",
+      config.base,
       "--state",
       "open",
       "--json",
@@ -1194,7 +1194,7 @@ export const realStackOps: StackOps = {
       issueRepo,
       "--draft",
       "--base",
-      "staging",
+      config.base,
       "--head",
       branch,
       "--title",

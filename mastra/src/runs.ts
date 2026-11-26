@@ -7,6 +7,7 @@ import { LibSQLStore } from '@mastra/libsql'
 import { PinoLogger } from '@mastra/loggers'
 import { MastraStorageExporter, Observability, SensitiveDataFilter } from '@mastra/observability'
 import { createFastLane, initialState, type LaneState, type Ops } from './fast-lane.ts'
+import { config } from './config.ts'
 import { createStack, initialStackState, type Members, type StackOps, type StackState } from './stack.ts'
 
 const noStackOps = new Proxy({} as StackOps, { get: () => async () => { throw new Error('This factory has no stack ops') } })
@@ -120,7 +121,7 @@ export async function list(factory: Factory): Promise<RunView[]> {
 }
 
 /** Runs until the lane waits for someone or finishes. */
-export async function start(factory: Factory, issue: number, base = 'staging'): Promise<RunView> {
+export async function start(factory: Factory, issue: number, base = config.base): Promise<RunView> {
   const runId = runIdFor(issue)
   if (await view(factory, runId)) throw new Error(`Issue #${issue} already has a run (${runId})`)
   const run = await factory.getWorkflow('fastLane').createRun({ runId })

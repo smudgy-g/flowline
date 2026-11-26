@@ -10,6 +10,7 @@ Nothing here is paid or hosted: Mastra runs in-process, and run state is a SQLit
 |---|---|
 | `src/fast-lane.ts` | The workflow: stages, loops and the gates where it waits |
 | `src/stack.ts` | The stack workflow: design gate, sub-issues, members run as fast-lane tasks on one branch |
+| `src/config.ts` | Reads `../factory.config.json`: the GitHub repo, base branch, checkout, worktree and skills paths, and what agents may read outside a worktree |
 | `src/rules.ts` | Pure rules: naming, path policy, prompts, review parsing, UAT verdicts, PR body |
 | `src/ops.ts` | Side effects: git, workmux, Pi (`../scripts/factory-pi.mjs`), UAT (`../scripts/run-uat.sh`), `gh` |
 | `src/runs.ts` | Start, read and resume runs (used by the CLI and the tests) |

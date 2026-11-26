@@ -421,7 +421,7 @@ export function createStack(ops: StackOps, members: Members) {
   return createWorkflow({
     id: "stack",
     description:
-      "Colonia stack: Factory stack issue → approved design → sub-issues → fast-lane members on one branch → draft PR to staging",
+      "Stack: Factory stack issue → approved design → sub-issues → fast-lane members on one branch → draft PR to the base branch",
     inputSchema: z.object({ issue: z.number().int().positive() }),
     outputSchema: z.object({ prUrl: z.string() }),
     stateSchema: StackState,

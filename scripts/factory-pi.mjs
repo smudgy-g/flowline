@@ -4,8 +4,9 @@ import { execFile, execFileSync } from 'node:child_process'
 import { basename, dirname, join, relative, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
-// Besides its worktree, a Pi session may read only the migrations, for schema context.
-const readable = ['/home/smudgee/Projects/colonia/supabase/staging']
+// Besides its worktree, a Pi session may read only factory.config.json's `readable` (e.g. migrations, for schema
+// context), which the factory passes as FACTORY_READABLE.
+const readable = JSON.parse(process.env.FACTORY_READABLE ?? '[]')
 
 // A tool's path as Pi resolves it: a leading '@' is dropped and '~' is the home folder.
 function toolPath(root, path = '.') {
@@ -64,7 +65,7 @@ function changedPaths(worktree) {
   return [...new Set([
     ...execFileSync('git', ['status', '--porcelain', '--untracked-files=all'], { cwd: worktree, encoding: 'utf8' })
       .split('\n').filter(Boolean).map(line => line.slice(3)),
-    ...execFileSync('git', ['diff', '--name-only', `${process.env.FACTORY_BASE ?? 'staging'}...HEAD`], { cwd: worktree, encoding: 'utf8' })
+    ...execFileSync('git', ['diff', '--name-only', `${process.env.FACTORY_BASE}...HEAD`], { cwd: worktree, encoding: 'utf8' })
       .split('\n').filter(Boolean),
   ])]
 }
