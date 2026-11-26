@@ -4,31 +4,95 @@
   "workspace": "..",
   "checkout": "service/main",
   "worktrees": "service/worktrees",
-  "paths": { "tests": ["**/*_test.go"], "sensitive": ["go.mod", "go.sum"] },
+  "paths": {
+    "tests": [
+      "**/*_test.go"
+    ],
+    "sensitive": [
+      "go.mod",
+      "go.sum"
+    ],
+    "protected": [
+      ".factory/**"
+    ]
+  },
   "sandbox": {
     "kit": "ghcr.io/example/go-factory-kit:1",
     "cpus": 4,
     "memory": "4g",
-    "allowlist": ["proxy.golang.org", "sum.golang.org"],
+    "allowlist": [
+      "proxy.golang.org",
+      "sum.golang.org"
+    ],
     "maxConcurrent": 2
   },
+  "tracker": {
+    "command": [
+      "node",
+      "trackers/github.mjs"
+    ],
+    "env": {}
+  },
   "commands": {
-    "changedCode": ["**/*.go"],
-    "setup": [["go", "mod", "download"]],
-    "autofix": [["gofmt", "-w", "--", "{changedCode}"]],
-    "check": [["go", "vet", "./..."]],
-    "gates": [["go", "test", "./..."]],
-    "env": { "CI": "true", "GOFLAGS": "-mod=readonly" }
+    "changedCode": [
+      "**/*.go"
+    ],
+    "setup": [
+      [
+        "go",
+        "mod",
+        "download"
+      ]
+    ],
+    "autofix": [
+      [
+        "gofmt",
+        "-w",
+        "--",
+        "{changedCode}"
+      ]
+    ],
+    "check": [
+      [
+        "go",
+        "vet",
+        "./..."
+      ]
+    ],
+    "gates": [
+      [
+        "go",
+        "test",
+        "./..."
+      ]
+    ],
+    "env": {
+      "CI": "true",
+      "GOFLAGS": "-mod=readonly"
+    }
   },
   "acceptance": {
-    "inputs": ["acceptance"],
-    "command": ["bash", "acceptance/run.sh"],
+    "inputs": [
+      "acceptance"
+    ],
+    "command": [
+      "bash",
+      "acceptance/run.sh"
+    ],
     "assets": ".cache/acceptance-assets",
     "env": {}
   },
   "skills": {
-    "packs": ["skills/core"],
-    "coder": { "always": ["ponytail"] },
-    "codeReviewers": ["architect"]
+    "packs": [
+      "skills/core"
+    ],
+    "coder": {
+      "always": [
+        "ponytail"
+      ]
+    },
+    "codeReviewers": [
+      "architect"
+    ]
   }
 }

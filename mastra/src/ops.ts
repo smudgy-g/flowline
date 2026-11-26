@@ -22,10 +22,10 @@ import { config, factoryRoot } from "./config.ts";
 import { sandbox } from './sandbox.ts';
 import { projectCommands } from './project-commands.ts';
 import { taskGitEnv } from './worktree-git.ts';
+import { tracker } from './tracker.ts';
 import type { Ops } from "./fast-lane.ts";
 import type { StackOps } from "./stack.ts";
 import {
-  replaceSection,
   sha256,
   type Issue,
 } from "./rules.ts";
@@ -48,60 +48,12 @@ export const factoryName = (() => {
 const claimLabel = `factory:${factoryName}`;
 
 async function claim(number: number): Promise<void> {
-  const labels = (
-    await run(workspace, "gh", [
-      "issue",
-      "view",
-      String(number),
-      "--repo",
-      issueRepo,
-      "--json",
-      "labels",
-      "--jq",
-      ".labels[].name",
-    ])
-  )
-    .split("\n")
-    .filter(Boolean);
-  const other = labels.find((l) => l.startsWith("factory:") && l !== claimLabel);
-  if (other)
-    throw new Error(`#${number} is already running on ${other.slice("factory:".length)}`);
-  if (labels.includes(claimLabel)) return;
-  // --force: creates the label the first time, and is a no-op after.
-  await run(workspace, "gh", [
-    "label",
-    "create",
-    claimLabel,
-    "--repo",
-    issueRepo,
-    "--color",
-    "5319e7",
-    "--description",
-    `Running on the ${factoryName} factory`,
-    "--force",
-  ]);
-  await run(workspace, "gh", [
-    "issue",
-    "edit",
-    String(number),
-    "--repo",
-    issueRepo,
-    "--add-label",
-    claimLabel,
-  ]);
+  await tracker.claim(number, factoryName);
 }
 
 /** An abandoned issue goes back to the Issues column of every factory. */
 export async function releaseIssue(number: number): Promise<void> {
-  await run(workspace, "gh", [
-    "issue",
-    "edit",
-    String(number),
-    "--repo",
-    issueRepo,
-    "--remove-label",
-    claimLabel,
-  ]);
+  await tracker.release(number);
 }
 
 /** Everything an acceptance run reads from the factory repo, extracted from one approved commit. */
@@ -404,53 +356,13 @@ export async function branchDiff(worktree: string): Promise<string> {
 export async function factoryIssues(): Promise<
   Array<{ number: number; title: string; url: string; stack: boolean }>
 > {
-  const labelled = async (label: string) =>
-    JSON.parse(
-      await run(workspace, "gh", [
-        "issue",
-        "list",
-        "-R",
-        issueRepo,
-        "--label",
-        label,
-        "--state",
-        "open",
-        "--limit",
-        "50",
-        "--json",
-        "number,title,url,labels",
-      ]),
-    ) as Array<{ number: number; title: string; url: string; labels: Array<{ name: string }> }>;
-  const [tasks, stacks] = await Promise.all([
-    labelled("factory"),
-    labelled("factory-stack"),
-  ]);
-  // Claimed by a factory: it shows as that factory's card, not as an issue to start.
-  const free = (i: { labels: Array<{ name: string }> }) =>
-    !i.labels.some((l) => l.name.startsWith("factory:"));
-  const item = (i: { number: number; title: string; url: string }, stack: boolean) => ({
-    number: i.number,
-    title: i.title,
-    url: i.url,
-    stack,
-  });
-  return [
-    ...stacks.filter(free).map((i) => item(i, true)),
-    ...tasks.filter(free).map((i) => item(i, false)),
-  ];
+  return (await tracker.list()).map((i) => ({ number: i.id, title: i.title, url: i.url, stack: i.stack }));
 }
 
-/** OPEN, MERGED or CLOSED, for a pull request URL. */
+/** The board's words for a delivered change: OPEN, MERGED or CLOSED. */
 export async function prState(url: string): Promise<string> {
-  return run(workspace, "gh", [
-    "pr",
-    "view",
-    url,
-    "--json",
-    "state",
-    "--jq",
-    ".state",
-  ]);
+  const { state } = await tracker.delivered(url);
+  return state === 'accepted' ? 'MERGED' : state === 'rejected' ? 'CLOSED' : 'OPEN';
 }
 
 /**
@@ -495,40 +407,9 @@ export async function closeIssue(
   number: number,
   comment: string,
 ): Promise<void> {
-  const state = await run(workspace, "gh", [
-    "issue",
-    "view",
-    String(number),
-    "--repo",
-    issueRepo,
-    "--json",
-    "state",
-    "--jq",
-    ".state",
-  ]);
-  if (state === "OPEN")
-    await run(workspace, "gh", [
-      "issue",
-      "close",
-      String(number),
-      "--repo",
-      issueRepo,
-      "--comment",
-      comment,
-    ]);
+  if ((await tracker.state(number)).open) await tracker.close(number, comment);
 }
 
-/** Issue authors (and commenters) whose text may reach an agent: the GitHub token's owner, plus FACTORY_ISSUE_AUTHORS. */
-async function trustedAuthors(): Promise<string[]> {
-  const owner = await run(workspace, "gh", ["api", "user", "--jq", ".login"]);
-  return [
-    owner,
-    ...(process.env.FACTORY_ISSUE_AUTHORS ?? "")
-      .split(",")
-      .map((s) => s.trim())
-      .filter(Boolean),
-  ];
-}
 
 export async function ownsWorktree(worktree: string): Promise<boolean> {
   return (await readFile(`${historyDir(worktree)}/worktree`,'utf8').catch(()=>'')) === worktree;
@@ -547,37 +428,8 @@ export const realOps: Ops = {
   paused,
   claim,
   async readIssue(number) {
-    const raw = JSON.parse(
-      await run(workspace, "gh", [
-        "issue",
-        "view",
-        String(number),
-        "--repo",
-        issueRepo,
-        "--json",
-        "number,title,body,url,state,author,comments",
-      ]),
-    );
-    const trusted = await trustedAuthors();
-    if (raw.state !== "OPEN")
-      throw new Error(`Issue #${number} is ${raw.state}`);
-    if (!trusted.includes(raw.author.login))
-      throw new Error(
-        `Issue #${number} is by ${raw.author.login}, who is not a trusted author (${trusted.join(", ")})`,
-      );
-    const comments = raw.comments
-      .filter((c: { author: { login: string } }) =>
-        trusted.includes(c.author.login),
-      )
-      .map((c: { body: string }) => c.body);
-    const issue: Issue = {
-      number: raw.number,
-      title: raw.title,
-      body: [raw.body, ...comments].join("\n\n---\n\n"),
-      url: raw.url,
-      author: raw.author.login,
-      comments,
-    };
+    const item = await tracker.read(number);
+    const issue: Issue = { ...item, number: item.id };
     return issue;
   },
 
@@ -703,20 +555,7 @@ export const realOps: Ops = {
   },
 
   async createIssue(title, body) {
-    return issueNumberOf(
-      await run(workspace, "gh", [
-        "issue",
-        "create",
-        "--repo",
-        issueRepo,
-        "--title",
-        title,
-        "--body",
-        body,
-        "--label",
-        "factory",
-      ]),
-    );
+    return (await tracker.create('task', { title, body })).id;
   },
 
   async recordSplit(base, member, parts) {
@@ -800,77 +639,20 @@ export const realOps: Ops = {
   },
 
   async openDraftPr(worktree, title, body) {
-    const [branch, base] = [
-      await run(worktree, "git", ["branch", "--show-current"]),
-      await baseOf(worktree),
-    ];
-    const existing = await run(workspace, "gh", ["--repo",issueRepo,
-      "pr",
-      "list",
-      "--head",
-      branch,
-      "--base",
-      base,
-      "--state",
-      "open",
-      "--json",
-      "url",
-      "--jq",
-      '.[0].url // ""',
-    ]);
-    if (existing) {
-      await run(workspace, "gh", ["--repo",issueRepo,
-        "pr",
-        "edit",
-        existing,
-        "--title",
-        title,
-        "--body",
-        body,
-      ]);
-      return existing;
-    }
-    return run(workspace, "gh", ["--repo",issueRepo,
-      "pr",
-      "create",
-      "--draft",
-      "--base",
-      base,
-      "--head",
-      branch,
-      "--title",
-      title,
-      "--body",
-      body,
-    ]);
+    const branch = await run(worktree, "git", ["branch", "--show-current"]);
+    return (await tracker.deliver(branch, await baseOf(worktree), title, body)).url;
   },
 
   async commentOnIssue(number, text) {
-    await run(workspace, "gh", [
-      "issue",
-      "comment",
-      String(number),
-      "--repo",
-      issueRepo,
-      "--body",
-      text,
-    ]);
+    await tracker.comment(number, text);
   },
+
 };
 
-/** The new issue's number, from the URL `gh issue create` prints. */
-function issueNumberOf(url: string): number {
-  const number = Number(url.trim().split("/").at(-1));
-  if (!Number.isInteger(number)) throw new Error(`Unexpected issue URL: ${url}`);
-  return number;
-}
 
 const splitFile = (branch: string, member: number) =>
   `${stackDir(branch)}/splits/${member}.json`;
 
-/** GitHub's internal id of an issue, which the sub-issue API takes. */
-const issueId = (number: number) =>
-  run(workspace, "gh", ["api", `repos/${issueRepo}/issues/${number}`, "--jq", ".id"]);
 
 export const realStackOps: StackOps = {
   paused,
@@ -896,75 +678,15 @@ export const realStackOps: StackOps = {
   },
 
   async createSubIssue(parent, title, body, after) {
-    // No `factory` label: a member must not show up on the board as a task anyone could start on the base branch.
-    const number = issueNumberOf(
-      await run(workspace, "gh", [
-        "issue",
-        "create",
-        "--repo",
-        issueRepo,
-        "--title",
-        title,
-        "--body",
-        body,
-      ]),
-    );
-    const id = await issueId(number);
-    await run(workspace, "gh", [
-      "api",
-      "-X",
-      "POST",
-      `repos/${issueRepo}/issues/${parent}/sub_issues`,
-      "-F",
-      `sub_issue_id=${id}`,
-    ]);
-    if (after)
-      await run(workspace, "gh", [
-        "api",
-        "-X",
-        "PATCH",
-        `repos/${issueRepo}/issues/${parent}/sub_issues/priority`,
-        "-F",
-        `sub_issue_id=${id}`,
-        "-F",
-        `after_id=${await issueId(after)}`,
-      ]);
-    return number;
+    return (await tracker.create('child', { title, body, parent, ...(after ? { after } : {}) })).id;
   },
 
   async retitleIssue(number, title) {
-    await run(workspace, "gh", [
-      "issue",
-      "edit",
-      String(number),
-      "--repo",
-      issueRepo,
-      "--title",
-      title,
-    ]);
+    await tracker.retitle(number, title);
   },
 
   async updateIssueSection(number, name, text) {
-    const body = await run(workspace, "gh", [
-      "issue",
-      "view",
-      String(number),
-      "--repo",
-      issueRepo,
-      "--json",
-      "body",
-      "--jq",
-      ".body",
-    ]);
-    await run(workspace, "gh", [
-      "issue",
-      "edit",
-      String(number),
-      "--repo",
-      issueRepo,
-      "--body",
-      replaceSection(body, name, text),
-    ]);
+    await tracker.section(number, name, text);
   },
 
   async withReviewCheckout(work) {
@@ -986,55 +708,13 @@ export const realStackOps: StackOps = {
   },
 
   async issueOpen(number) {
-    return (
-      (await run(workspace, "gh", [
-        "issue",
-        "view",
-        String(number),
-        "--repo",
-        issueRepo,
-        "--json",
-        "state",
-        "--jq",
-        ".state",
-      ])) === "OPEN"
-    );
+    return (await tracker.state(number)).open;
   },
 
   closeIssue,
 
   async openStackPr(branch, title, body) {
-    const existing = await run(client, "gh", [
-      "pr",
-      "list",
-      "--repo",
-      issueRepo,
-      "--head",
-      branch,
-      "--base",
-      config.base,
-      "--state",
-      "open",
-      "--json",
-      "url",
-      "--jq",
-      '.[0].url // ""',
-    ]);
-    if (existing) return existing;
-    return run(client, "gh", [
-      "pr",
-      "create",
-      "--repo",
-      issueRepo,
-      "--draft",
-      "--base",
-      config.base,
-      "--head",
-      branch,
-      "--title",
-      title,
-      "--body",
-      body,
-    ]);
+    return (await tracker.deliver(branch, config.base, title, body)).url;
   },
+
 };

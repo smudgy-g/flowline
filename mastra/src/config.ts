@@ -46,6 +46,8 @@ const Config = z.strictObject({
     allowlist: z.array(z.string().regex(/^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,63}$/)).default([]),
     maxConcurrent: z.number().int().positive(),
   }),
+  /** Where work items come from and where a finished change goes (docs/tracker.md). */
+  tracker: z.strictObject({ command: Command, env: z.record(z.string(), z.string()).default({}) }),
   /** What the factory runs in a work item's sandbox, in order. */
   commands: z.strictObject({
     /** Files `{changedCode}` expands to, as globs. */
@@ -104,6 +106,7 @@ export const config = {
   worktrees: `${at(raw.worktrees)}/`,
   paths: raw.paths,
   sandbox: raw.sandbox,
+  tracker: raw.tracker,
   commands: raw.commands,
   acceptance: {
     ...raw.acceptance,

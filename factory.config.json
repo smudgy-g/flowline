@@ -4,7 +4,15 @@
   "workspace": "..",
   "checkout": "project/main",
   "worktrees": "project/worktrees",
-  "paths": { "tests": ["tests/**"], "protected": [], "sensitive": [] },
+  "paths": {
+    "tests": [
+      "tests/**"
+    ],
+    "protected": [
+      ".factory/**"
+    ],
+    "sensitive": []
+  },
   "sandbox": {
     "kit": "shell",
     "cpus": 2,
@@ -12,22 +20,53 @@
     "allowlist": [],
     "maxConcurrent": 1
   },
+  "tracker": {
+    "command": [
+      "node",
+      "trackers/local.mjs"
+    ],
+    "env": {}
+  },
   "commands": {
-    "changedCode": ["**/*"],
+    "changedCode": [
+      "**/*"
+    ],
     "setup": [],
     "autofix": [],
     "check": [],
-    "gates": [["make", "test"]],
-    "env": { "CI": "true" }
+    "gates": [
+      [
+        "make",
+        "test"
+      ]
+    ],
+    "env": {
+      "CI": "true"
+    }
   },
   "acceptance": {
-    "inputs": ["acceptance"],
-    "command": ["bash", "acceptance/run.sh"],
+    "inputs": [
+      "acceptance"
+    ],
+    "command": [
+      "bash",
+      "acceptance/run.sh"
+    ],
     "env": {}
   },
   "skills": {
-    "packs": ["skills/core"],
-    "coder": { "always": ["ponytail"] },
-    "codeReviewers": ["architect", "interrogate", "change-impact"]
+    "packs": [
+      "skills/core"
+    ],
+    "coder": {
+      "always": [
+        "ponytail"
+      ]
+    },
+    "codeReviewers": [
+      "architect",
+      "interrogate",
+      "change-impact"
+    ]
   }
 }
