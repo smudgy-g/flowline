@@ -863,7 +863,7 @@
               ? `<button class="btn primary" onclick="cleanUp(false)">Clean up</button>`
               : "") +
               (c.prUrl
-                ? `<a class="btn${c.merged ? "" : " primary"}" style="text-decoration:none;padding:8px 16px;border-radius:6px" href="${esc(c.prUrl)}" target="_blank">Open the PR</a>`
+                ? `<a class="btn${c.merged ? "" : " primary"}" style="text-decoration:none;padding:8px 16px;border-radius:6px" href="${esc(c.prUrl)}" target="_blank">Open the change</a>`
                 : ""),
           ];
         if (c.kind === "running")
@@ -902,12 +902,12 @@
           return [
             c.merged
               ? `<div class="why green"><b>Merged.</b> Clean up removes the worktree, its tmux window and the local branch, and closes the issue with a link to the PR. The PR stays on GitHub.</div>${planBlock(c.lane?.plan)}`
-              : `<div class="why green">UAT passed and the draft PR is open. Review and merge it on GitHub; the factory never merges. Once it's merged, you can clean up here.</div>${planBlock(c.lane?.plan)}`,
+              : `<div class="why green">Acceptance passed and the change is delivered. Review and merge it yourself; the factory never merges. Once your tracker reports it accepted, you can clean up here.</div>${planBlock(c.lane?.plan)}`,
             (c.merged
               ? `<button class="btn primary" onclick="cleanUp(false)">Clean up</button>`
               : "") +
               (c.prUrl
-                ? `<a class="btn${c.merged ? "" : " primary"}" style="text-decoration:none;padding:8px 16px;border-radius:6px" href="${esc(c.prUrl)}" target="_blank">Open the PR</a>`
+                ? `<a class="btn${c.merged ? "" : " primary"}" style="text-decoration:none;padding:8px 16px;border-radius:6px" href="${esc(c.prUrl)}" target="_blank">Open the change</a>`
                 : "") +
               (c.merged ? "" : abandonButton),
           ];

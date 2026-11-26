@@ -416,10 +416,10 @@ export function boardRoutes(factory: () => Factory) {
             if (state === "MERGED")
               Object.assign(c, {
                 merged: true,
-                status: "Merged · ready to clean up",
+                status: "Accepted · ready to clean up",
               });
             if (state === "CLOSED")
-              Object.assign(c, { status: "PR closed without merging" });
+              Object.assign(c, { status: "Rejected without merging" });
           }
         if (Date.now() - issues.at > 60_000) {
           issues = await factoryIssues().then(
