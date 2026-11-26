@@ -6,6 +6,8 @@ Each work item runs in **its own Docker Sandbox** (`sbx`): a microVM with its ow
 
 ## Configure a worker
 
+[docs/setup.md](docs/setup.md) walks through a working setup end to end, with the failures it produced and their fixes.
+
 1. Use a worker that Docker Sandboxes supports (Ubuntu 24.04+ with KVM, Apple-silicon macOS, or Windows 11; only Ubuntu is exercised here — see [docs/sandboxes.md](docs/sandboxes.md)). Install Git, authenticated `gh`, Node and pnpm (`mise.toml`), and a managed Pi installation with model credentials. Set `FACTORY_MODEL_PLANNER`, `_CODER`, `_REVIEW` and `_TESTER` to available `provider/model` IDs. Install `sbx`, run `sbx login` once, and run `sbx policy init deny-all` on that worker; do not share its daemon with unrelated projects. You can watch the board from Linux, macOS or Windows over an SSH tunnel.
 2. Fork the factory separately from the target. Edit **`factory.config.json`**: `repo` is the GitHub owner/name, `base` the draft PR target. Clone that repo at `checkout` with `origin` pointing to it. `workspace` resolves from the factory root; `checkout` and `worktrees` from `workspace`. `paths.tests` limits where the tester role may write, `paths.protected` blocks changes, `paths.sensitive` flags them for the human. Keep `skills/core` and add your own packs ([guide](skills/README.md)). [`examples/go.factory.json`](examples/go.factory.json) is a second profile.
 3. Build the **sandbox kit**: an image with your project's toolchain and GNU `timeout`. Name it in `sandbox.kit` with `cpus`, `memory`, `maxConcurrent` (start at one on a small worker) and `allowlist` — the exact hosts a build sandbox may reach, normally only package registries. Never bake credentials into a kit.
