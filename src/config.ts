@@ -67,7 +67,10 @@ const Config = z.strictObject({
     allowlist: z.array(z.string().regex(/^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,63}$/)).default([]),
     maxConcurrent: z.number().int().positive(),
   }),
-  /** Where work items come from and where a finished change goes (docs/tracker.md); files in the repo by default. */
+  /**
+   * Where work items come from and where a finished change goes (docs/tracker.md). A bare name is one of the
+   * factory's own adapters (`local`, the default, or `github`); anything else is your command, run from the project.
+   */
   tracker: z.strictObject({ command: Command.optional(), env: z.record(z.string(), z.string()).default({}) }).prefault({}),
   /** What the factory runs in a work item's sandbox, in order. */
   commands: z.strictObject({
@@ -124,6 +127,15 @@ const fromOrigin = () => {
   } catch { return undefined; }
 };
 const repo = raw.repo ?? fromOrigin() ?? basename(projectRoot);
+
+/** A bare adapter name ships with the factory; anything else is the project's own command. */
+function trackerCommand(command?: [string, ...string[]]): [string, ...string[]] {
+  const [name, ...rest] = command ?? ["local"];
+  if (rest.length || !/^[a-z][a-z0-9-]*$/.test(name)) return command!;
+  const builtin = join(installRoot, "trackers", `${name}.mjs`);
+  if (!existsSync(builtin)) throw new Error(`No tracker adapter called "${name}" (try local or github)`);
+  return ["node", builtin];
+}
 const at = (path: string) => resolve(projectRoot, path.replaceAll("{repo}", basename(projectRoot)));
 
 export const config = {
@@ -135,10 +147,7 @@ export const config = {
   worktrees: `${at(raw.worktrees)}/`,
   paths: raw.paths,
   sandbox: raw.sandbox,
-  tracker: {
-    ...raw.tracker,
-    command: raw.tracker.command ?? (["node", join(installRoot, "trackers/local.mjs")] as [string, ...string[]]),
-  },
+  tracker: { ...raw.tracker, command: trackerCommand(raw.tracker.command) },
   commands: raw.commands,
   acceptance: { ...raw.acceptance, assets: raw.acceptance.assets && at(raw.acceptance.assets) },
   skills: {

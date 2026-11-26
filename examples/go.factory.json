@@ -1,30 +1,84 @@
 {
   "base": "main",
   "paths": {
-    "tests": ["**/*_test.go"],
-    "protected": [".factory/**"],
-    "sensitive": ["go.mod", "go.sum"]
+    "tests": [
+      "**/*_test.go"
+    ],
+    "protected": [
+      ".factory/**"
+    ],
+    "sensitive": [
+      "go.mod",
+      "go.sum"
+    ]
   },
   "sandbox": {
     "kit": "ghcr.io/example/go-factory-kit:1",
     "cpus": 4,
     "memory": "4g",
-    "allowlist": ["proxy.golang.org", "sum.golang.org"],
+    "allowlist": [
+      "proxy.golang.org",
+      "sum.golang.org"
+    ],
     "maxConcurrent": 2
   },
-  "tracker": { "command": ["frankenstein-tracker-github"] },
-  "commands": {
-    "changedCode": ["**/*.go"],
-    "setup": [["go", "mod", "download"]],
-    "autofix": [["gofmt", "-w", "--", "{changedCode}"]],
-    "check": [["go", "vet", "./..."]],
-    "gates": [["go", "test", "./..."]],
-    "env": { "CI": "true", "GOFLAGS": "-mod=readonly" }
+  "tracker": {
+    "command": [
+      "github"
+    ]
   },
-  "acceptance": { "assets": ".factory/assets" },
+  "commands": {
+    "changedCode": [
+      "**/*.go"
+    ],
+    "setup": [
+      [
+        "go",
+        "mod",
+        "download"
+      ]
+    ],
+    "autofix": [
+      [
+        "gofmt",
+        "-w",
+        "--",
+        "{changedCode}"
+      ]
+    ],
+    "check": [
+      [
+        "go",
+        "vet",
+        "./..."
+      ]
+    ],
+    "gates": [
+      [
+        "go",
+        "test",
+        "./..."
+      ]
+    ],
+    "env": {
+      "CI": "true",
+      "GOFLAGS": "-mod=readonly"
+    }
+  },
+  "acceptance": {
+    "assets": ".factory/assets"
+  },
   "skills": {
-    "packs": ["core"],
-    "coder": { "always": ["ponytail"] },
-    "codeReviewers": ["architect"]
+    "packs": [
+      "core"
+    ],
+    "coder": {
+      "always": [
+        "ponytail"
+      ]
+    },
+    "codeReviewers": [
+      "architect"
+    ]
   }
 }
