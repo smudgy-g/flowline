@@ -17,6 +17,7 @@ import {
 import { basename, dirname } from "node:path";
 import { promisify } from "node:util";
 import { config, factoryRoot } from "./config.ts";
+import { taskGitEnv } from './worktree-git.ts';
 import type { Ops } from "./fast-lane.ts";
 import type { StackOps } from "./stack.ts";
 import {
@@ -156,7 +157,9 @@ async function run(
   try {
     const { stdout } = await exec(bin, args, {
       cwd,
-      env: { ...inherited, ...(await toolchain(cwd)), ...env },
+      env: { ...inherited,
+        ...(cwd.startsWith(worktrees) && (bin === 'git' || bin === 'bash') ? await taskGitEnv(client,cwd) :
+          bin === 'git' || bin === 'gh' || bin === 'workmux' ? {} : await toolchain(cwd)), ...env },
       maxBuffer: 64 * 1024 * 1024,
     });
     return stdout.trim();
@@ -210,8 +213,11 @@ const GATE_MINUTES = 40;
  * (gitignored), next to the work they describe. Agents may read them but never write them (factory-pi.mjs).
  * Clean up archives history.md to .data/history/ before the worktree goes; checks.log goes with it.
  */
-export const historyDir = (worktree: string) =>
-  `${worktree}/.agents/artefacts/factory`;
+export const historyDir = (worktree: string) => {
+  const item = basename(worktree);
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9-]*$/.test(item)) throw Error('Invalid work item');
+  return `${factoryRoot}/mastra/.data/items/${item}`;
+};
 
 export const historyFile = (worktree: string) =>
   `${historyDir(worktree)}/history.md`;
@@ -519,10 +525,11 @@ export async function branchDiff(worktree: string): Promise<string> {
     .split("\0")
     .filter(Boolean);
   // `git diff --no-index` exits 1 when the files differ, which is always here.
+  const gitEnv = { ...inherited, ...await taskGitEnv(client,worktree) };
   const added = await Promise.all(
     untracked.map((file) =>
-      exec("git", ["diff", "--no-index", "--", "/dev/null", file], {
-        cwd: worktree,
+      exec("git", ["diff", "--no-index", "--no-ext-diff", "--no-textconv", "--", "/dev/null", file], {
+        cwd: worktree, env: gitEnv,
       }).then(
         (r) => r.stdout,
         (e: { stdout?: string }) => e.stdout ?? "",
@@ -817,8 +824,10 @@ export const realOps: Ops = {
       "node",
       [`${factoryRoot}/scripts/factory-pi.mjs`, worktree, role, prompt],
       {
+        FACTORY_TASK_GIT: JSON.stringify(await taskGitEnv(client,worktree)),
+        FACTORY_ITEM_RECORDS: historyDir(worktree),
         FACTORY_BASE: `origin/${await baseOf(worktree)}`,
-        FACTORY_READABLE: JSON.stringify(config.readable),
+        FACTORY_READABLE: JSON.stringify([...config.readable, historyDir(worktree)]),
         FACTORY_CODER_SKILLS: JSON.stringify(config.skills.coder),
       },
     );
@@ -1007,7 +1016,7 @@ export const realOps: Ops = {
       await run(worktree, "git", ["branch", "--show-current"]),
       await baseOf(worktree),
     ];
-    const existing = await run(worktree, "gh", [
+    const existing = await run(workspace, "gh", ["--repo",issueRepo,
       "pr",
       "list",
       "--head",
@@ -1022,7 +1031,7 @@ export const realOps: Ops = {
       '.[0].url // ""',
     ]);
     if (existing) {
-      await run(worktree, "gh", [
+      await run(workspace, "gh", ["--repo",issueRepo,
         "pr",
         "edit",
         existing,
@@ -1033,7 +1042,7 @@ export const realOps: Ops = {
       ]);
       return existing;
     }
-    return run(worktree, "gh", [
+    return run(workspace, "gh", ["--repo",issueRepo,
       "pr",
       "create",
       "--draft",

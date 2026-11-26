@@ -61,11 +61,16 @@ export function authorizeTool(worktree, role, event, readRoots = readable) {
 }
 
 // What the task changed: uncommitted files, and commits since the base.
+function gitOptions(worktree) {
+  const registration = JSON.parse(process.env.FACTORY_TASK_GIT || '{}')
+  if (!registration.GIT_DIR || registration.GIT_WORK_TREE !== worktree) throw new Error('Missing trusted Git registration')
+  return { cwd: worktree, encoding: 'utf8', env: { ...process.env, ...registration } }
+}
 function changedPaths(worktree) {
   return [...new Set([
-    ...execFileSync('git', ['status', '--porcelain', '--untracked-files=all'], { cwd: worktree, encoding: 'utf8' })
+    ...execFileSync('git', ['status', '--porcelain', '--untracked-files=all'], gitOptions(worktree))
       .split('\n').filter(Boolean).map(line => line.slice(3)),
-    ...execFileSync('git', ['diff', '--name-only', `${process.env.FACTORY_BASE}...HEAD`], { cwd: worktree, encoding: 'utf8' })
+    ...execFileSync('git', ['diff', '--name-only', `${process.env.FACTORY_BASE}...HEAD`], gitOptions(worktree))
       .split('\n').filter(Boolean),
   ])]
 }
@@ -95,9 +100,10 @@ export async function runCheck(worktree, signal) {
   const tail = text => text.slice(-6000)
   // Passed: record the exact code it passed on, so the lint and typecheck gates can skip a repeat (ops.ts runGates).
   if (lint.ok && types.ok) {
-    const tree = execFileSync('bash', [join(factoryRoot, 'scripts/content-tree.sh')], { cwd: worktree, encoding: 'utf8' })
-    mkdirSync(join(worktree, '.agents/artefacts/factory'), { recursive: true })
-    writeFileSync(join(worktree, '.agents/artefacts/factory/checked-tree'), tree.trim())
+    const tree = execFileSync('bash', [join(factoryRoot, 'scripts/content-tree.sh')], gitOptions(worktree))
+    const records = process.env.FACTORY_ITEM_RECORDS
+    mkdirSync(records, { recursive: true })
+    writeFileSync(join(records, 'checked-tree'), tree.trim())
   }
   return [
     lint.ok ? 'lint: passed' : `lint: failed\n${tail(lint.out)}`,
