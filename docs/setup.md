@@ -194,6 +194,46 @@ tunnel.
 The board remembers other factories you have tunnelled in, in the browser's local storage, and shows a red banner
 for any it cannot reach. **`/board?peers=`** forgets them; `?peers=worker2:4112` sets them.
 
+## 9. The acceptance adapter
+
+The stub in `acceptance/run.sh` refuses to pass anything, so the first run stops at UAT with *"Acceptance is not
+configured"*. That is the design: nothing ships until you write a real one.
+
+The adapter runs in a **sandbox created with no network**, against `$PROJECT_ARCHIVE`, a git archive of the pushed
+commit. It therefore cannot install its toolchain the way `commands.setup` does. Stage what it needs in a
+directory of your own and name it in `acceptance.assets`; the factory mounts it read-only as `$ASSETS`:
+
+```sh
+mkdir -p ~/factory/.assets
+curl -fsSL https://nodejs.org/dist/v22.19.0/node-v22.19.0-linux-x64.tar.gz -o ~/factory/.assets/node-linux-x64.tar.gz
+echo '.assets/' >> ~/factory/.git/info/exclude      # assets are big; keep them out of the factory repo
+```
+
+```json
+"acceptance": { "inputs": ["acceptance"], "command": ["bash", "acceptance/run.sh"], "assets": ".assets", "env": {} }
+```
+
+The adapter gets `$REPO`, `$REF`, `$COMMIT`, `$INPUTS` (its own directory, read-only, as the working directory),
+`$PROJECT_ARCHIVE` and `$ASSETS`. It prints **one JSON object on stdout** and nothing else; logs go to stderr:
+
+```json
+{"commit": "<the SHA from $COMMIT>", "pass": true, "detail": "what was checked, or what failed"}
+```
+
+Exit zero for any completed verdict, including a failure. Exit nonzero only for an infrastructure problem — then
+the run waits for you to fix it rather than recording a verdict. A verdict naming the wrong commit is rejected.
+
+**The adapter is pinned to a factory commit.** A run judges itself against the factory commit it was approved at,
+so editing `acceptance/run.sh` after approval changes nothing: the old version keeps running. Commit the fix, then
+point the run forward at it:
+
+```sh
+git -C ~/factory add acceptance/run.sh && git -C ~/factory commit -m "Acceptance for …"
+node mastra/src/cli.ts retry <item> --baseline $(git -C ~/factory rev-parse HEAD)
+```
+
+Baselines only move forward along factory history, so a run cannot be pointed back at inputs it already failed.
+
 ## Troubleshooting
 
 Every one of these came up during this setup.
@@ -213,3 +253,7 @@ Every one of these came up during this setup.
 | `This state belongs to <repo> via <tracker>` | `mastra/.data` was built against a different repo or tracker | Use a separate factory checkout, or clear `mastra/.data` |
 | Nothing listed, title shows "Work item" | The item file has no `# ` heading | Add one |
 | `Can't reach the <name> factory` banner | A peer factory remembered from an earlier session | Open `/board?peers=` to forget it |
+| `Acceptance adapter failed (2): Acceptance is not configured` | The shipped stub, which never passes | Step 9 |
+| A fixed adapter still fails the same way | The run is pinned to the factory commit it was approved at | `fx retry <item> --baseline $(git rev-parse HEAD)` |
+| `UAT tested <sha>, expected <sha>` | The adapter reported a commit other than `$COMMIT` | Echo `$COMMIT` in the verdict |
+| `Sandbox: missing` on a card | The sandbox was removed under a running item | **Recreate sandbox** on the card, then **Retry** |
