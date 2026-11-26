@@ -571,9 +571,6 @@
         >
         <button class="btn" id="pause-all" onclick="pauseAll()">Pause all</button>
         <span id="pause-info">Runs finish the step they're on, then wait. Good before a sync.</span>
-        <button class="btn" id="sync-btn" onclick="sync()">Sync</button>
-        <span id="sync-info"></span>
-        <pre id="sync-log"></pre>
         <a href="/workflows/fastLane" style="margin-top: auto">Studio</a>
       </nav>
       <div class="board" id="board"></div>
@@ -724,7 +721,7 @@
             `Can't reach the factory: ${e.message}`;
         }
       }
-      const key = (c) => `${c.kind}|${c.status}|${c.token ?? ""}`;
+      const key = (c) => `${c.kind}|${c.status}|${c.sandbox ?? ''}|${c.token ?? ""}`;
 
       function render(columns) {
         const count = (k) => cards.filter((c) => c.kind === k).length;
@@ -749,7 +746,7 @@
             (c) => `
         <button class="card ${c.kind}" onclick="openCard('${esc(c.id)}')">
           <div class="num">#${c.issue}${c.stack ? " · stack" : ""}${c.standard ? " · standard" : ""}${c.many && c.column !== "Issues" ? ` · ${esc(c.factory)}` : ""}</div><div class="title">${esc(c.title)}</div>
-          <div class="status">${c.kind === "needs" ? "Needs you: " : ""}${esc(c.status)}</div>
+          <div class="status">${c.kind === "needs" ? "Needs you: " : ""}${esc(c.status)}${c.sandbox ? ` · Sandbox: ${esc(c.sandbox)}` : ''}</div>
           <div class="meta">${c.kind === "running" || c.kind === "needs" || c.kind === "stuck" ? esc(ago(c.since)) : ""}</div>
         </button>`,
           )
@@ -968,7 +965,7 @@
      ${retry ? `<p class="muted">Fix the cause (or ask the driver to), then retry.</p>` : ""}
      ${!w.kind ? `<p class="muted">The run stopped unexpectedly. Ask the driver to look at it.</p>` : ""}${historyBlock(c)}${stepsBlock(c)}${coderBlock(c)}${planBlock(c.lane?.plan)}`,
           retry
-            ? `<button class="btn primary" onclick="act('retry')">Retry</button>${w.kind === "no-change" ? `<button class="btn" onclick="act('proceed')">Proceed to the checks as it is</button>` : ""}${w.kind === "changed" ? `<textarea id="why" rows="3" placeholder="…or say why and send it back to the coder"></textarea><button class="btn" onclick="act('reject')">Send back</button>` : w.kind === "cycle-limit" || w.kind === "no-change" ? `<textarea id="why" rows="3" placeholder="Optional: a decision for the coder and reviewer (it overrides the plan)"></textarea>` : ""}`
+            ? `<button class="btn primary" onclick="act('retry')">Retry</button>${w.kind === 'error' && c.lane?.workItem ? `<button class="btn" onclick="recreateSandbox()">Recreate sandbox</button>` : ''}${w.kind === "no-change" ? `<button class="btn" onclick="act('proceed')">Proceed to the checks as it is</button>` : ""}${w.kind === "changed" ? `<textarea id="why" rows="3" placeholder="…or say why and send it back to the coder"></textarea><button class="btn" onclick="act('reject')">Send back</button>` : w.kind === "cycle-limit" || w.kind === "no-change" ? `<textarea id="why" rows="3" placeholder="Optional: a decision for the coder and reviewer (it overrides the plan)"></textarea>` : ""}`
             : "",
         ];
       }
@@ -997,6 +994,10 @@
           : `<button class="btn" onclick="pauseRun(true)" title="It finishes the step it's on, then waits">Pause</button>`;
       }
       const opened = () => cards.find((c) => c.id === openId);
+      async function recreateSandbox() {
+        const c = opened();
+        if (confirm('Replace this sandbox and rerun setup? The worktree stays; sandbox-local services and data are lost.')) await post(`${c.at}/board/recreate/${c.issue}`,{token:c.token});
+      }
       async function pauseRun(on) {
         const c = opened();
         await post(`${c.at}/board/pause/${c.issue}`, { on });
@@ -1168,30 +1169,8 @@
           );
       }
 
-      async function loadSync() {
-        const s = await (await fetch("/board/sync")).json().catch(() => null);
-        if (!s) return;
-        const when = (t) => {
-          const a = t ? ago(Date.parse(t)) : "";
-          return !a ? "never" : a === "just now" ? a : `${a} ago`;
-        };
-        const btn = document.getElementById("sync-btn");
-        btn.disabled = s.running;
-        btn.textContent = s.running ? "Syncing…" : "Sync";
-        document.getElementById("sync-info").innerHTML =
-          `GitHub and board code: ${when(s.vm)}.<br>Pi, skills and configs: ${when(s.laptop)} (sent from your laptop by <code>factory-ui</code>).`;
-        document.getElementById("sync-log").textContent = s.log;
-      }
-      async function sync() {
-        document.getElementById("sync-btn").disabled = true;
-        await fetch("/board/sync", { method: "POST" }).catch(() => {});
-        loadSync();
-      }
-
       refresh();
-      loadSync();
       setInterval(refresh, 5000);
-      setInterval(loadSync, 5000);
       setInterval(loadLog, 3000);
     </script>
   </body>

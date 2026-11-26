@@ -1,6 +1,6 @@
 // The fast lane's real side effects, ported from extensions/behaviors/agent_task.ts, uat.ts and uat_integrity.ts.
 // Pi gets no shell: everything that touches git, the network or approvals happens here.
-import { execFile, spawn } from "node:child_process";
+import { execFile } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import {
@@ -143,17 +143,6 @@ async function run(
       `${bin} ${args[0]} failed: ${(e.stderr || e.message).slice(-3000)}\n${(e.stdout ?? "").slice(-3000)}`,
     );
   }
-}
-/** Runs vm/sync-in-vm.sh on its own, since it may restart this server; it writes its progress to syncLog. */
-export const syncLog = `${factoryRoot}/mastra/.data/logs/sync.log`;
-export function syncVm() {
-  const child = spawn("bash", ["-l", `${factoryRoot}/vm/sync-in-vm.sh`], {
-    detached: true,
-    stdio: "ignore",
-    env: inherited,
-  });
-  child.unref();
-  return child;
 }
 /**
  * Pause requests, one empty file each: `all`, or a run's id. They outlive server restarts, so a sync can come between
@@ -532,6 +521,7 @@ export async function removeTask(
     await run(client,'git',['worktree','prune']);
   }
   if (await run(client,'git',['branch','--list',workItem])) await run(client,'git',['branch','-D',workItem]);
+  await rm(`${historyDir(worktree)}/worktree`,{force:true});
 }
 
 /** Closes the issue with a comment, unless it is closed already. */
@@ -574,7 +564,11 @@ async function trustedAuthors(): Promise<string[]> {
   ];
 }
 
+export async function ownsWorktree(worktree: string): Promise<boolean> {
+  return (await readFile(`${historyDir(worktree)}/worktree`,'utf8').catch(()=>'')) === worktree;
+}
 export async function prepareSandbox(item: string, worktree: string) {
+  if (!await ownsWorktree(worktree)) throw Error('Worktree is not registered to this factory');
   await checkWorktree(worktree);
   const existing = (await sandbox.list()).find(s=>s.name === `fx-${item}`);
   if (!existing) await sandbox.create(item,worktree);
@@ -686,6 +680,8 @@ export const realOps: Ops = {
       return worktree;
     }
     await run(client, 'git', ['-c','core.hooksPath=/dev/null','worktree','add','-b',branch,worktree,`origin/${base}`]);
+    await mkdir(historyDir(worktree),{recursive:true});
+    await writeFile(`${historyDir(worktree)}/worktree`,worktree);
     await run(client, "git", ["config", `branch.${branch}.factoryBase`, base]);
     await checkWorktree(worktree);
     await mkdir(`${worktree}/.agents/artefacts`, { recursive: true });

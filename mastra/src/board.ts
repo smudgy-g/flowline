@@ -4,7 +4,6 @@
 // Every action carries the token of the wait it was shown, so a click only applies to what was on screen.
 // Like `fx approve`, this guards against mistakes, not against an agent with a shell in the VM (README.md).
 import { readFile } from "node:fs/promises";
-import { homedir } from "node:os";
 import { registerApiRoute } from "@mastra/core/server";
 import type { LaneState } from "./fast-lane.ts";
 import {
@@ -19,12 +18,13 @@ import {
   historyFile,
   paused,
   pauseRequests,
+  prepareSandbox,
+  ownsWorktree,
   prState,
   removeTask,
   setPaused,
-  syncLog,
-  syncVm,
 } from "./ops.ts";
+import { sandbox } from './sandbox.ts';
 import { sha256 } from "./rules.ts";
 import { config } from "./config.ts";
 import type { StackState } from "./stack.ts";
@@ -98,6 +98,7 @@ export type Card = {
   status: string;
   since?: number;
   token?: string;
+  sandbox?: string;
   /** A step is executing in this server right now (a deploy would kill it); a stack waiting on its member is not. */
   executing?: boolean;
   waiting?: RunView["waiting"];
@@ -369,13 +370,6 @@ export function boardRoutes(factory: () => Factory) {
     return issue;
   };
 
-  let syncing = false;
-  /** When each half of the sync last finished (vm/sync.sh writes laptop-synced, sync-in-vm.sh vm-synced). */
-  const stamp = (name: string) =>
-    readFile(`${homedir()}/.cache/factory/${name}`, "utf8").then(
-      (s) => s.trim(),
-      () => "",
-    );
 
   return [
     registerApiRoute("/board", {
@@ -408,6 +402,12 @@ export function boardRoutes(factory: () => Factory) {
               status: "Working…",
               token: undefined,
             });
+        const boxes = await sandbox.list().catch(()=>null);
+        for (const card of cards) if (card.lane?.workItem) {
+          const item = card.lane.workItem;
+          const offline = boxes?.find(s => s.name === `fx-uat-${item}`);
+          card.sandbox = offline ? `${offline.status} (offline UAT)` : boxes?.find(s=>s.name === `fx-${item}`)?.status ?? (boxes ? 'missing' : 'unavailable');
+        }
         const pauses = await pauseRequests();
         const allPaused = pauses.includes("all");
         for (const c of cards)
@@ -457,35 +457,6 @@ export function boardRoutes(factory: () => Factory) {
       },
     }),
 
-    registerApiRoute("/board/sync", {
-      method: "GET",
-      requiresAuth: false,
-      handler: async (c) =>
-        c.json({
-          running: syncing,
-          laptop: await stamp("laptop-synced"),
-          vm: await stamp("vm-synced"),
-          log: (await readFile(syncLog, "utf8").catch(() => ""))
-            .split("\n")
-            .slice(-40)
-            .join("\n"),
-        }),
-    }),
-
-    // The VM half only: GitHub fetches and the board's own code. Laptop files only travel when factory-ui runs vm/sync.sh.
-    registerApiRoute("/board/sync", {
-      method: "POST",
-      requiresAuth: false,
-      handler: async (c) => {
-        if (syncing) return c.json({ error: "Already syncing" }, 409);
-        syncing = true;
-        syncVm().on("exit", () => {
-          syncing = false;
-        });
-        return c.json({ ok: true }, 202);
-      },
-    }),
-
     registerApiRoute("/board/diff/:issue", {
       method: "GET",
       requiresAuth: false,
@@ -507,7 +478,7 @@ export function boardRoutes(factory: () => Factory) {
           factory(),
           runIdFor(issueNumber(c.req.param("issue"))),
         );
-        const text = lane?.workItem
+        const text = lane?.worktree
           ? await readFile(checksLog(lane.worktree), "utf8").catch(() =>
               // Runs from before the log moved into the worktree.
               readFile(
@@ -524,6 +495,25 @@ export function boardRoutes(factory: () => Factory) {
             .slice(-60)
             .join("\n"),
         );
+      },
+    }),
+
+    registerApiRoute('/board/recreate/:issue', {
+      method:'POST', requiresAuth:false,
+      handler: async c => {
+        const id = runIdFor(issueNumber(c.req.param('issue')));
+        const {token} = await c.req.json<{token?:string}>();
+        const [current,lane] = await Promise.all([card(factory(),id),laneState(factory(),id)]);
+        if (!lane?.workItem || busy.has(id) || current?.waiting?.kind !== 'error' || !token || token !== current.token) return c.json({error:'No matching error wait'},409);
+        busy.add(id);
+        try {
+          const wt = lane.worktree || `${config.worktrees}${lane.workItem}`;
+          await sandbox.remove(lane.workItem,true);
+          await sandbox.remove(lane.workItem);
+          await prepareSandbox(lane.workItem,wt);
+          return c.json({ok:true}); // Keep the human wait: Retry is a separate action.
+        } catch(err) { return c.json({error:(err as Error).message},500); }
+        finally { busy.delete(id); }
       },
     }),
 
@@ -568,8 +558,11 @@ export function boardRoutes(factory: () => Factory) {
           return c.json({ error: "The PR is not merged yet." }, 409);
         busy.add(runId);
         try {
-          if (lane?.worktree && lane.workItem)
-            await removeTask(lane.worktree, lane.workItem, !!abandon);
+          if (lane?.workItem) {
+            const wt = lane.worktree || `${config.worktrees}${lane.workItem}`;
+            if (await ownsWorktree(wt)) await removeTask(wt,lane.workItem,!!abandon);
+            else if (lane.worktree) throw Error('Worktree predates sandbox ownership records; clean it up with its original factory');
+          }
           if (merged) await closeIssue(issue, `Merged in ${v.prUrl}`);
           else await releaseIssue(issue).catch(() => {}); // a run from before claims has no label
           await forget(factory(), runId);
