@@ -27,7 +27,7 @@ import {
 import { sandbox } from './sandbox.ts';
 import { sha256 } from "./rules.ts";
 import { config } from "./config.ts";
-import { ItemId } from "./tracker.ts";
+import { ItemId, tracker } from "./tracker.ts";
 import type { StackState } from "./stack.ts";
 import {
   forget,
@@ -46,7 +46,7 @@ import {
 } from "./runs.ts";
 
 export const COLUMNS = [
-  "Issues",
+  "Items",
   "Stacks",
   "Plan",
   "Code",
@@ -433,7 +433,7 @@ export function boardRoutes(factory: () => Factory) {
             issue: i.number,
             title: i.title,
             url: i.url,
-            column: "Issues",
+            column: "Items",
             stack: i.stack || undefined,
             kind: busy.has(runIdFor(i.number)) ? "running" : "idle",
             status: busy.has(runIdFor(i.number))
@@ -511,6 +511,21 @@ export function boardRoutes(factory: () => Factory) {
           return c.json({ok:true}); // Keep the human wait: Retry is a separate action.
         } catch(err) { return c.json({error:(err as Error).message},500); }
         finally { busy.delete(id); }
+      },
+    }),
+
+    // Items are created through the tracker, so the board needs no GitHub form (or any other tracker's).
+    registerApiRoute("/board/new", {
+      method: "POST",
+      requiresAuth: false,
+      handler: async (c) => {
+        const { title, body } = await c.req.json<{ title?: string; body?: string }>();
+        if (!title?.trim() || !body?.trim()) return c.json({ error: "A title and a description are required" }, 400);
+        try {
+          const { id } = await tracker.create("task", { title: title.trim(), body: body.trim() });
+          issues.at = 0; // show it without waiting for the next poll
+          return c.json({ id });
+        } catch (err) { return c.json({ error: (err as Error).message }, 500); }
       },
     }),
 

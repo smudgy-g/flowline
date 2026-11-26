@@ -550,25 +550,15 @@
     <div id="notice"></div>
     <div class="main">
       <nav class="side">
-        <a
-          class="btn primary"
-          href="https://github.com/{{repo}}/issues/new?template=factory.yml"
-          target="_blank"
-          >New issue</a
-        >
+        <button class="btn primary" onclick="newItem(false)">New item</button>
         <span
-          >Opens the factory form on GitHub; it shows up under Issues within a
-          minute.</span
+          >Describe one outcome with its acceptance criteria; it appears under
+          Items straight away.</span
         >
-        <a
-          class="btn"
-          href="https://github.com/{{repo}}/issues/new?template=factory-stack.yml"
-          target="_blank"
-          >New stack</a
-        >
+        <button class="btn" onclick="newItem(true)">New stack</button>
         <span
-          >A bigger feature as several PRs: describe it once and list the PRs in
-          order.</span
+          >A bigger feature as several changes: describe it once and list them
+          in order.</span
         >
         <button class="btn" id="pause-all" onclick="pauseAll()">Pause all</button>
         <span id="pause-info">Runs finish the step they're on, then wait.</span>
@@ -674,7 +664,7 @@
                 id: `${f.at}|${c.issue}`,
                 many,
               });
-              if (c.column !== "Issues") runs.push(c);
+              if (c.column !== "Items") runs.push(c);
               else {
                 const seen = issues.get(c.issue) ?? { ...c, startAt: [] };
                 seen.startAt.push({ at: f.at, factory: data.factory });
@@ -747,7 +737,7 @@
           .map(
             (c) => `
         <button class="card ${c.kind}" onclick="openCard('${esc(c.id)}')">
-          <div class="num">#${c.issue}${c.stack ? " · stack" : ""}${c.standard ? " · standard" : ""}${c.many && c.column !== "Issues" ? ` · ${esc(c.factory)}` : ""}</div><div class="title">${esc(c.title)}</div>
+          <div class="num">${esc(c.issue)}${c.stack ? " · stack" : ""}${c.standard ? " · standard" : ""}${c.many && c.column !== "Items" ? ` · ${esc(c.factory)}` : ""}</div><div class="title">${esc(c.title)}</div>
           <div class="status">${c.kind === "needs" ? "Needs you: " : ""}${esc(c.status)}${c.sandbox ? ` · Sandbox: ${esc(c.sandbox)}` : ''}</div>
           <div class="meta">${c.kind === "running" || c.kind === "needs" || c.kind === "stuck" ? esc(ago(c.since)) : ""}</div>
         </button>`,
@@ -759,7 +749,7 @@
       }
 
       function stepsBar(c) {
-        if (c.column === "Issues" || c.column === "Stacks") return "";
+        if (c.column === "Items" || c.column === "Stacks") return "";
         const at = STAGES.indexOf(c.column);
         const cls = (n) =>
           n < at || c.kind === "done"
@@ -876,7 +866,7 @@
 
       function detail(c) {
         const w = c.waiting ?? {};
-        if (c.column === "Issues" && c.stack)
+        if (c.column === "Items" && c.stack)
           return [
             `<div class="ask">A stack, not started. Starting reads its PR list; then you agree one technical design for the whole stack. Approving the design creates the sub-issues, and the PRs run one after another.</div>`,
             startButtons(c, "Start stack"),
@@ -885,7 +875,7 @@
           const d = stackDetail(c);
           if (d) return d;
         }
-        if (c.column === "Issues")
+        if (c.column === "Items")
           return [
             `<div class="ask">Not started. Starting reads the issue and sets up a run; then you agree a plan.</div>`,
             startButtons(c, "Start"),
@@ -1004,6 +994,24 @@
         const c = opened();
         await post(`${c.at}/board/pause/${c.issue}`, { on });
       }
+      // The body's sections are what the lane reads (rules.ts), whatever tracker stores them.
+      const TEMPLATE = (stack) => `### Outcome\n\n\n\n### Acceptance\n\n- \n${stack ? "\n### PRs in order\n\n1. \n" : ""}\n### Lane\n\nfast lane\n`;
+
+      async function newItem(stack) {
+        const title = prompt("Title: one line saying what changes");
+        if (!title) return;
+        const body = prompt("Description (Markdown sections)", TEMPLATE(stack));
+        if (!body) return;
+        const r = await fetch("/board/new", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ title, body }),
+        });
+        const data = await r.json().catch(() => ({ error: "The tracker gave no reply" }));
+        if (!r.ok) return alert(`Could not create the item: ${data.error}`);
+        refresh();
+      }
+
       async function pauseAll() {
         const btn = document.getElementById("pause-all");
         btn.disabled = true;
@@ -1044,7 +1052,7 @@
         shown = key(c);
         const [body, actions] = detail(c);
         document.getElementById("drawer-body").innerHTML = `
-    <div class="top"><div><div class="sub">${esc(c.issue)}${c.many && c.column !== "Issues" ? ` · on ${esc(c.factory)}` : ""}${c.url ? ` · <a href="${esc(c.url)}" target="_blank">work item</a>` : ""}${c.lane?.workItem ? ` · ${esc(c.lane.workItem)}` : ""}</div><h2>${esc(c.title)}</h2></div>
+    <div class="top"><div><div class="sub">${esc(c.issue)}${c.many && c.column !== "Items" ? ` · on ${esc(c.factory)}` : ""}${c.url ? ` · <a href="${esc(c.url)}" target="_blank">work item</a>` : ""}${c.lane?.workItem ? ` · ${esc(c.lane.workItem)}` : ""}</div><h2>${esc(c.title)}</h2></div>
       <button class="close" onclick="closeCard()">×</button></div>
     ${stepsBar(c)}<div class="content">${body}</div>`;
         document.getElementById("actions").innerHTML =
