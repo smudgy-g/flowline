@@ -519,6 +519,25 @@
         background: #0f1012;
         color: var(--text);
       }
+      .field {
+        display: block;
+        margin: 14px 0;
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .field input,
+      .field textarea {
+        display: block;
+        width: 100%;
+        margin-top: 6px;
+        color: var(--text);
+        font-size: 14px;
+      }
+      .field textarea {
+        font:
+          13px ui-monospace,
+          monospace;
+      }
       .actions textarea {
         order: -1;
         flex: 1 1 100%;
@@ -994,21 +1013,45 @@
         const c = opened();
         await post(`${c.at}/board/pause/${c.issue}`, { on });
       }
-      // The body's sections are what the lane reads (rules.ts), whatever tracker stores them.
-      const TEMPLATE = (stack) => `### Outcome\n\n\n\n### Acceptance\n\n- \n${stack ? "\n### PRs in order\n\n1. \n" : ""}\n### Lane\n\nfast lane\n`;
+      // The body's sections are what the lane reads (rules.ts), whatever the tracker stores them in.
+      const TEMPLATE = (stack) =>
+        `### Outcome\n\n\n\n### Acceptance\n\n- \n${stack ? "\n### PRs in order\n\n1. \n" : ""}\n### Lane\n\nfast lane\n`;
 
-      async function newItem(stack) {
-        const title = prompt("Title: one line saying what changes");
-        if (!title) return;
-        const body = prompt("Description (Markdown sections)", TEMPLATE(stack));
-        if (!body) return;
+      function newItem(stack) {
+        openId = null;
+        document.getElementById("drawer-body").innerHTML = `
+    <div class="top"><div><div class="sub">new ${stack ? "stack" : "work item"}</div>
+      <h2>${stack ? "A feature as several changes" : "One outcome to deliver"}</h2></div>
+      <button class="close" onclick="closeCard()">×</button></div>
+    <div class="content">
+      <div class="why">Describe the outcome and how you will know it is done, not how to build it.${stack ? " List the changes in order under <code>PRs in order</code>; mark any you will do yourself <code>(by hand)</code>." : ""}</div>
+      <label class="field">Title<input id="new-title" placeholder="One line saying what changes" autocomplete="off"></label>
+      <label class="field">Description<textarea id="new-body" rows="18" spellcheck="false">${esc(TEMPLATE(stack))}</textarea></label>
+      <div id="new-error" class="why red" style="display:none"></div>
+    </div>`;
+        document.getElementById("actions").innerHTML =
+          `<button class="btn primary" onclick="createItem()">Create</button><button class="btn" onclick="closeCard()">Cancel</button>`;
+        document.getElementById("overlay").className = "open";
+        document.getElementById("new-title").focus();
+      }
+
+      async function createItem() {
+        const title = document.getElementById("new-title").value.trim();
+        const body = document.getElementById("new-body").value.trim();
+        const fail = (message) => {
+          const el = document.getElementById("new-error");
+          el.textContent = message;
+          el.style.display = "";
+        };
+        if (!title || !body) return fail("A title and a description are both needed.");
         const r = await fetch("/board/new", {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ title, body }),
         });
         const data = await r.json().catch(() => ({ error: "The tracker gave no reply" }));
-        if (!r.ok) return alert(`Could not create the item: ${data.error}`);
+        if (!r.ok) return fail(`Could not create it: ${data.error}`);
+        closeCard();
         refresh();
       }
 
