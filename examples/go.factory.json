@@ -4,6 +4,7 @@
   "workspace": "..",
   "checkout": "service/main",
   "worktrees": "service/worktrees",
+  "paths": { "tests": ["**/*_test.go"], "sensitive": ["go.mod", "go.sum"] },
   "checks": {
     "setup": [["go", "mod", "download"]],
     "gates": [["go", "vet", "./..."], ["go", "test", "./..."]]

@@ -8,39 +8,34 @@ import {
   cp,
   lstat,
   mkdir,
+  mkdtemp,
   readFile,
   readdir,
   realpath,
   rm,
   writeFile,
 } from "node:fs/promises";
-import { basename, dirname } from "node:path";
+import { z } from "zod";
+import { dirname, matchesGlob, join } from "node:path";
 import { promisify } from "node:util";
 import { config, factoryRoot } from "./config.ts";
 import type { Ops } from "./fast-lane.ts";
 import type { StackOps } from "./stack.ts";
 import {
-  isMigrationPath,
-  isSensitivePath,
-  isTestPath,
-  journeySource,
   replaceSection,
   sha256,
   type Issue,
-  type UatReport,
 } from "./rules.ts";
 
 export { factoryRoot } from "./config.ts";
 
+const uatInputs = ["acceptance"];
 const workspace = config.workspace;
 const client = config.checkout;
 const worktrees = config.worktrees;
 export const issueRepo = config.repo;
 
-/**
- * This factory's name, when more than one runs (the laptop's VM, the M1's): `~/.config/factory/name` in its VM,
- * which no sync touches. Starting an issue labels it `factory:<name>`, so another factory won't start it too.
- */
+/** A distinct worker name prevents two workers claiming the same issue. */
 export const factoryName = (() => {
   try {
     const name = readFileSync(`${homedir()}/.config/factory/name`, "utf8").trim();
@@ -107,36 +102,11 @@ export async function releaseIssue(number: number): Promise<void> {
   ]);
 }
 
-/** Everything a UAT run reads from the factory repo; run-uat.sh extracts exactly these from one commit. */
-const uatInputs = [
-  "specs",
-  "seeds",
-  "lighthouse-baseline.json",
-  "playwright.config.mjs",
-  "scripts/summarize.mjs",
-];
-
-const testEnv = {
-  CI: "true",
-  NUXT_PUBLIC_SUPABASE_URL: "http://127.0.0.1:54321",
-  NUXT_PUBLIC_SUPABASE_KEY: "test-key",
-  STUDIO_GITHUB_TOKEN: "test-token",
-};
-
-const nuxtEnv = { CI: "true", NUXT_TELEMETRY_DISABLED: "1" };
-
-/**
- * The environment for everything the factory runs. `mastra dev` runs with NODE_ENV=production, which made the client's
- * tests render Vue in production mode and fail their snapshots, so it is never passed on.
- */
+// Do not leak the server's production mode into project checks.
 const { NODE_ENV: _serverMode, ...inherited } = process.env;
 const exec = promisify(execFile);
 
-/**
- * Commands in the client run with that checkout's own toolchain (its mise.toml), not the Node this server started
- * with: a worktree installed and tested with another Node lost better-sqlite3's native build, and every test failed
- * to start. Each worktree follows its own pin, so a Node bump on staging needs nothing here.
- */
+/** Project commands use the target checkout's own pinned tools. */
 async function toolchain(cwd: string): Promise<Record<string, string>> {
   if (cwd !== client && !cwd.startsWith(worktrees)) return {};
   const { stdout } = await exec("mise", ["bin-paths"], { cwd, env: inherited });
@@ -167,18 +137,7 @@ async function run(
     );
   }
 }
-/** Runs vm/sync-in-vm.sh on its own, since it may restart this server; it writes its progress to syncLog. */
 const heavyLock = `${factoryRoot}/.cache/heavy.lock`;
-export const syncLog = `${factoryRoot}/mastra/.data/logs/sync.log`;
-export function syncVm() {
-  const child = spawn("bash", ["-l", `${factoryRoot}/vm/sync-in-vm.sh`], {
-    detached: true,
-    stdio: "ignore",
-    env: inherited,
-  });
-  child.unref();
-  return child;
-}
 /**
  * Pause requests, one empty file each: `all`, or a run's id. They outlive server restarts, so a sync can come between
  * pausing and resuming.
@@ -264,11 +223,11 @@ async function gate(
   const tools = await toolchain(worktree);
   // `timeout` signals its whole process group, so vitest's workers stop too; -k kills what ignores SIGTERM.
   const code = await new Promise<number | null>((done, fail) => {
-    // Gates and the UAT build take turns (scripts/run-uat.sh): together they run the VM out of memory.
+    // Serialize expensive project checks on a shared worker.
     const child = spawn(
       "flock",
       [heavyLock, "timeout", "-k", "30s", `${GATE_MINUTES}m`, bin, ...args],
-      { cwd: worktree, env: { ...inherited, ...tools, ...(config.checks ? { CI: "true" } : testEnv) } },
+      { cwd: worktree, env: { ...inherited, ...tools, CI: "true" } },
     );
     const take = (chunk: Buffer) => {
       out.write(chunk);
@@ -293,7 +252,7 @@ const exists = (path: string) =>
     () => false,
   );
 
-/** A task worktree must be a real directory under client/worktrees/ with no .env (agents never see real secrets). */
+/** A task worktree must be a real directory under the configured worktrees directory with no .env (agents never see real secrets). */
 async function checkWorktree(worktree: string): Promise<void> {
   if (
     !worktree.startsWith(worktrees) ||
@@ -398,83 +357,11 @@ async function fingerprint(worktree: string): Promise<string> {
 
 async function inspect(worktree: string) {
   await checkWorktree(worktree);
-  const before = await changedFiles(worktree);
-  const migrations = before.filter(isMigrationPath);
-  if (migrations.length)
-    throw new Error(
-      `Migration/schema change stopped: ${migrations.join(", ")}. Migrations are not made by a task${config.readable.length ? `; they belong in ${config.readable.join(" or ")}` : ""}`,
-    );
-  const present = [];
-
-  for (const file of before) {
-    const stat = await lstat(`${worktree}/${file}`).catch(() => null);
-
-    if (!stat) continue;
-
-    // The coder has no delete tool: emptying a file is how it deletes one.
-    if (stat.isFile() && stat.size === 0 && basename(file) !== ".gitkeep") {
-      await rm(`${worktree}/${file}`);
-      continue;
-    }
-
-    present.push(file);
-  }
-
-  // Format before fingerprinting, so formatting never changes approved content (FEEDBACK: e958dab).
-  if (!config.checks && present.length)
-    await run(worktree, `${worktree}/node_modules/.bin/prettier`, [
-      "--write",
-      "--ignore-unknown",
-      "--",
-      ...present,
-    ]);
   const files = await changedFiles(worktree);
-  return { files, sensitive: files.filter(isSensitivePath) };
-}
-
-/**
- * ESLint's own fixes (such as blank lines around multi-line statements) on the task's files, before the lint gate
- * judges them, so a fixable rule never costs the coder a round. Prettier runs again after it, as the gate checks
- * both. What ESLint can't fix, it leaves for the lint gate to report; so does a crash, hence the ignored exit code.
- */
-async function autofix(worktree: string): Promise<void> {
-  const files: string[] = [];
-
-  for (const file of await changedFiles(worktree)) {
-    if (
-      /\.([cm]?[jt]sx?|vue)$/.test(file) &&
-      (await exists(`${worktree}/${file}`))
-    ) {
-      files.push(file);
-    }
-  }
-
-  if (!files.length) return;
-
-  await run(
-    worktree,
-    "pnpm",
-    ["exec", "eslint", "--fix", "--no-warn-ignored", "--", ...files],
-    nuxtEnv,
-  ).catch(() => undefined);
-
-  await inspect(worktree);
-}
-
-/**
- * True when the coder's `check` (factory-pi.mjs) passed on the worktree exactly as it is now: the tree it recorded
- * matches the current one. Agents cannot write the record (it is in the factory's history folder).
- */
-async function coderChecked(worktree: string): Promise<boolean> {
-  const recorded = await readFile(
-    `${historyDir(worktree)}/checked-tree`,
-    "utf8",
-  ).catch(() => "");
-  if (!recorded) return false;
-  const now = await run(worktree, "bash", [
-    `${factoryRoot}/scripts/content-tree.sh`,
-  ]);
-  return recorded.trim() === now;
+  const matches = (file: string, patterns: string[]) => patterns.some(p => matchesGlob(file, p));
+  const blocked = files.filter(file => matches(file, config.paths.protected));
+  if (blocked.length) throw new Error(`Protected paths changed: ${blocked.join(", ")}`);
+  return { files, sensitive: files.filter(file => matches(file, config.paths.sensitive)) };
 }
 
 async function remoteHead(worktree: string, branch: string): Promise<string> {
@@ -738,7 +625,7 @@ export const realOps: Ops = {
       .split("\n")
       .filter(Boolean)
       .map((line) => {
-        const match = /^100644 blob [a-f0-9]+\t(.+)$/.exec(line);
+        const match = /^100(?:644|755) blob [a-f0-9]+\t(.+)$/.exec(line);
         if (!match)
           throw new Error(`Unsupported UAT input at ${commit}: ${line}`);
         return match[1];
@@ -750,7 +637,7 @@ export const realOps: Ops = {
   },
 
   async provision(branch, base) {
-    // Always branch from GitHub's tip; the local staging checkout is never kept current.
+    // Always branch from GitHub's tip; the local base checkout is never kept current.
     await run(client, "git", ["fetch", "origin", base]);
     // workmux's settings for a task worktree, from factory.config.json.
     const workmuxConfig = `${factoryRoot}/.cache/workmux.agent-task.yaml`;
@@ -798,19 +685,8 @@ export const realOps: Ops = {
       });
     }
 
-    if (config.checks) {
-      for (const [bin, ...args] of config.checks.setup)
-        await run(worktree, bin, args, { CI: "true" });
-      return worktree;
-    }
-
-    // Staging may have gained packages the VM's store lacks; fetch only downloads (no scripts), then the install stays offline.
-    await run(worktree, "pnpm", ["fetch", "--ignore-scripts"]);
-    await run(worktree, "pnpm", ["install", "--offline", "--frozen-lockfile"]);
-    // pnpm records the builds `fetch --ignore-scripts` skipped as pending, and the offline install never runs them:
-    // better-sqlite3 stayed unbuilt and the whole suite failed to start. allowBuilds in pnpm-workspace.yaml still decides.
-    await run(worktree, "pnpm", ["rebuild", "--pending"]);
-    await run(worktree, "pnpm", ["exec", "nuxt", "prepare"], nuxtEnv);
+    for (const [bin, ...args] of config.checks.setup)
+      await run(worktree, bin, args, { CI: "true" });
     return worktree;
   },
 
@@ -824,7 +700,7 @@ export const realOps: Ops = {
       [`${factoryRoot}/scripts/factory-pi.mjs`, worktree, role, prompt],
       {
         FACTORY_BASE: `origin/${await baseOf(worktree)}`,
-        FACTORY_CUSTOM_CHECKS: config.checks ? "1" : "0",
+        FACTORY_TEST_PATHS: JSON.stringify(config.paths.tests),
         FACTORY_READABLE: JSON.stringify(config.readable),
         FACTORY_CODER_SKILLS: JSON.stringify(config.skills.coder),
       },
@@ -876,78 +752,16 @@ export const realOps: Ops = {
       `\n######## Checks · ${new Date().toISOString()}\n`,
     );
 
-    if (config.checks) {
-      for (const command of config.checks.gates) {
-        const name = command.join(" ");
-        try {
-          await gate(worktree, name, command);
-        } catch (error) {
-          const output = (error as Error).message;
-          if (/hung:/.test(output)) throw error;
-          return { ok: false, gate: name, output };
-        }
-        await inspect(worktree);
-      }
-      return { ok: true };
-    }
-
-    const changedTests = (await changedFiles(worktree)).filter(isTestPath);
-    // tests/e2e runs only under the client's SSR config (a production Nuxt build); `pnpm test` finds no files there.
-    const ssrTests = changedTests.filter((f) => f.startsWith("tests/e2e/"));
-    const tests = changedTests.filter((f) => !ssrTests.includes(f));
-    const gates: Array<[string, string[]]> = [
-      ["install", ["install", "--offline", "--frozen-lockfile"]],
-      ["lint", ["lint"]],
-      ["typecheck", ["typecheck"]],
-      // No `--`: vitest takes the files as filters only when passed straight through; with `--` it runs everything.
-      ...(tests.length
-        ? [["changed tests", ["test", ...tests]] as [string, string[]]]
-        : []),
-      ...(ssrTests.length
-        ? [["changed SSR tests", ["test:ssr", ...ssrTests]] as [string, string[]]]
-        : []),
-      ["full suite", ["test"]],
-    ];
-    // Lint and typecheck both run before any test, and fail together: one coder round fixes both, and tests never
-    // run on code that doesn't build.
-    const failed: Array<[string, string]> = [];
-    const result = () => ({
-      ok: false as const,
-      gate: failed.map(([name]) => name).join(", "),
-      output: failed
-        .map(([name, out]) => `${name}:\n${out.slice(-4000 / failed.length)}`)
-        .join("\n\n"),
-    });
-    let checked = false;
-    for (const [name, args] of gates) {
-      if (failed.length && name !== "typecheck") return result();
-      // The coder's check already passed lint and typecheck on exactly this code: don't run them twice.
-      if (name === "lint") checked = await coderChecked(worktree);
-      if (checked && (name === "lint" || name === "typecheck")) {
-        await appendFile(
-          checksLog(worktree),
-          `\n=== ${name} · skipped: the coder's check passed on this exact code\n`,
-        );
-        continue;
-      }
+    for (const command of config.checks.gates) {
+      const name = command.join(" ");
       try {
-        if (name === "lint") {
-          if (!(await exists(`${worktree}/.nuxt/eslint.config.mjs`))) {
-            await run(worktree, "pnpm", ["exec", "nuxt", "prepare"], nuxtEnv);
-          }
-
-          await autofix(worktree);
-        }
-
-        await gate(worktree, name, ["pnpm", ...args]);
+        await gate(worktree, name, command);
       } catch (error) {
-        // A hang says nothing about the code: stop the run (it waits as an error) instead of sending it to the coder.
-        if (/hung:/.test((error as Error).message)) throw error;
-        failed.push([name, (error as Error).message]);
-        if (name !== "lint") return result();
-        continue;
+        const output = (error as Error).message;
+        if (/hung:/.test(output)) throw error;
+        return { ok: false, gate: name, output };
       }
-      await inspect(worktree); // a gate must not introduce a migration or unformatted files
+      await inspect(worktree);
     }
     return { ok: true };
   },
@@ -985,44 +799,18 @@ export const realOps: Ops = {
   },
 
   async runUat(branch, baseline) {
-    let stdout = "";
-    try {
-      stdout = await run(
-        factoryRoot,
-        "bash",
-        [`${factoryRoot}/scripts/run-uat.sh`, branch, baseline],
-        { UAT_INPUTS: uatInputs.join(" ") },
-      );
-    } catch (error) {
-      // run-uat.sh exits non-zero on a failed verdict too; the error carries its stdout, report path included.
-      // Without one, the error's stderr is the only cause there is, so it stays in the message below.
-      stdout = (error as Error).message;
-    }
-    const path = stdout
-      .split("\n")
-      .find(
-        (line) =>
-          line.startsWith(`${factoryRoot}/.cache/run-`) &&
-          line.endsWith("/report.json"),
-      );
-    if (!path)
-      throw new Error(
-        `UAT failed before writing a report: ${stdout.slice(-1000)}`,
-      );
-    const report = JSON.parse(await readFile(path, "utf8")) as UatReport;
-    // The planner and coder can't see the run; give them the failed journeys' code from its pinned specs.
-    const specDir = `${dirname(path)}/inputs/specs`;
-    const specs = await Promise.all(
-      (await readdir(specDir).catch(() => []))
-        .filter((f) => f.endsWith(".mjs"))
-        .map((f) => readFile(`${specDir}/${f}`, "utf8")),
-    );
-    for (const journey of report.journeys ?? [])
-      if (journey.status === "failed")
-        journey.source = specs
-          .map((spec) => journeySource(spec, journey.name))
-          .find(Boolean);
-    return { run: dirname(path), report };
+    const commit = await remoteHead(client, branch);
+    if (!/^[0-9a-f]{40,64}$/.test(commit)) throw new Error(`Missing remote branch: ${branch}`);
+    await mkdir(`${factoryRoot}/.cache`, { recursive: true });
+    const dir = await mkdtemp(`${factoryRoot}/.cache/run-`);
+    // Run the human-owned adapter from the approved baseline, never from the task branch.
+    await run(factoryRoot, "bash", ["-euo", "pipefail", "-c",
+      'git archive "$1" -- acceptance | tar -x -C "$2"', "archive", baseline, dir]);
+    const output = await run(dir, "timeout", ["-k", "30s", `${GATE_MINUTES}m`, "bash", "acceptance/run.sh", config.repo, branch, commit]);
+    const verdict = z.object({ commit: z.literal(commit), pass: z.boolean(), detail: z.string().min(1) }).parse(JSON.parse(output));
+    const report = { ref: branch, ...verdict };
+    await writeFile(join(dir, "report.json"), JSON.stringify(report));
+    return { run: dir, report };
   },
 
   async openDraftPr(worktree, title, body) {
@@ -1122,7 +910,7 @@ export const realStackOps: StackOps = {
   },
 
   async createSubIssue(parent, title, body, after) {
-    // No `factory` label: a member must not show up on the board as a task anyone could start on staging.
+    // No `factory` label: a member must not show up on the board as a task anyone could start on the base branch.
     const number = issueNumberOf(
       await run(workspace, "gh", [
         "issue",
@@ -1194,8 +982,7 @@ export const realStackOps: StackOps = {
   },
 
   async withReviewCheckout(work) {
-    // A detached checkout of GitHub's staging under client/worktrees/, so runPi's worktree checks hold; never
-    // client/staging itself.
+    // Never use the read-only base checkout for an agent session.
     await run(client, "git", ["fetch", "origin", config.base]);
     const dir = `${worktrees}review-${Date.now()}`;
     await run(client, "git", ["worktree", "add", "--detach", dir, `origin/${config.base}`]);

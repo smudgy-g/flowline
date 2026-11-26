@@ -1,10 +1,9 @@
 // The board: every run as a card in the column of the stage it is at, with what it needs from you.
-// Served by `mastra dev` at http://localhost:4111/board (the page is board.html); `factory-ui` opens it.
+// Served by `mastra dev` at http://localhost:4111/board (the page is board.html).
 //
 // Every action carries the token of the wait it was shown, so a click only applies to what was on screen.
 // Like `fx approve`, this guards against mistakes, not against an agent with a shell in the VM (README.md).
 import { readFile } from "node:fs/promises";
-import { homedir } from "node:os";
 import { registerApiRoute } from "@mastra/core/server";
 import type { LaneState } from "./fast-lane.ts";
 import {
@@ -22,8 +21,6 @@ import {
   prState,
   removeTask,
   setPaused,
-  syncLog,
-  syncVm,
 } from "./ops.ts";
 import { sha256 } from "./rules.ts";
 import { config } from "./config.ts";
@@ -369,14 +366,6 @@ export function boardRoutes(factory: () => Factory) {
     return issue;
   };
 
-  let syncing = false;
-  /** When each half of the sync last finished (vm/sync.sh writes laptop-synced, sync-in-vm.sh vm-synced). */
-  const stamp = (name: string) =>
-    readFile(`${homedir()}/.cache/factory/${name}`, "utf8").then(
-      (s) => s.trim(),
-      () => "",
-    );
-
   return [
     registerApiRoute("/board", {
       method: "GET",
@@ -449,40 +438,13 @@ export function boardRoutes(factory: () => Factory) {
           }));
         return c.json({
           factory: factoryName,
+          repo: config.repo,
+          base: config.base,
           columns: COLUMNS,
           cards: [...waiting, ...cards],
           allPaused,
           issuesError: issues.error,
         });
-      },
-    }),
-
-    registerApiRoute("/board/sync", {
-      method: "GET",
-      requiresAuth: false,
-      handler: async (c) =>
-        c.json({
-          running: syncing,
-          laptop: await stamp("laptop-synced"),
-          vm: await stamp("vm-synced"),
-          log: (await readFile(syncLog, "utf8").catch(() => ""))
-            .split("\n")
-            .slice(-40)
-            .join("\n"),
-        }),
-    }),
-
-    // The VM half only: GitHub fetches and the board's own code. Laptop files only travel when factory-ui runs vm/sync.sh.
-    registerApiRoute("/board/sync", {
-      method: "POST",
-      requiresAuth: false,
-      handler: async (c) => {
-        if (syncing) return c.json({ error: "Already syncing" }, 409);
-        syncing = true;
-        syncVm().on("exit", () => {
-          syncing = false;
-        });
-        return c.json({ ok: true }, 202);
       },
     }),
 

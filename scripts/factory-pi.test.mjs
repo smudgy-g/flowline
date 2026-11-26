@@ -34,7 +34,8 @@ test('Pi tool guard restricts writes, symlinks, shell, and review roles', () => 
     assert.match(authorizeTool(root, 'coder', call('write', join(tmpdir(), 'outside')))?.reason, /Outside/)
     assert.match(authorizeTool(root, 'coder', call('write', 'escape/other'))?.reason, /Symlink/)
     assert.match(authorizeTool(root, 'coder', call('bash', 'x'))?.reason, /Unapproved/)
-    assert.equal(authorizeTool(root, 'coder', call('check')), undefined)
+    assert.match(authorizeTool(root, 'coder', call('check'))?.reason, /Unapproved/)
+    assert.equal(authorizeTool(root, 'tester', call('write', 'main_test.go'), [], ['**/*_test.go']), undefined)
     assert.equal(authorizeTool(root, 'review', call('codemode')), undefined) // its calls are guarded one by one
     assert.match(authorizeTool(root, 'review', call('check'))?.reason, /Unapproved/)
     assert.match(authorizeTool(root, 'tester', call('check'))?.reason, /Unapproved/)

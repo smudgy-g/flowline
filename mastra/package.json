@@ -2,7 +2,7 @@
   "name": "frankenstein-mastra",
   "private": true,
   "type": "module",
-  "description": "The colonia fast lane as a local Mastra workflow; see README.md",
+  "description": "Configurable software delivery workflows and operator board",
   "engines": {
     "node": ">=22.18"
   },

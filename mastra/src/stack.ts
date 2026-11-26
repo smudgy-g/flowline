@@ -1,14 +1,14 @@
-// A stack: a bigger feature built as several PRs on one branch, shipped to staging as one.
+// A stack: a bigger feature built as several PRs on one branch, shipped to the base branch as one.
 //
-//   intake → design (driver writes, human approves) → setup (stack branch, sub-issues) → members → draft PR to staging
+//   intake → design (driver writes, human approves) → setup (stack branch, sub-issues) → members → draft PR to the base branch
 //
 // Each member is a normal fast-lane run whose base is the stack branch. A "(by hand)" member waits for the human's
 // "done". The members step waits while a member runs; cleaning up the member's merged card continues it (board.ts).
 // Every step is idempotent, so a retry or a resume re-runs it from the saved state.
 //
-// ponytail: staging is not merged into the stack branch between members (Swamp's sync_stack), and there is no UAT
-// of the whole stack before its PR; each member is UAT'd on its own branch. Conflicts with staging show on the
-// stack PR. Add a sync step before each member if staging moves under long stacks.
+// ponytail: the base branch is not merged into the stack branch between members (Swamp's sync_stack), and there is no UAT
+// of the whole stack before its PR; each member is UAT'd on its own branch. Conflicts with the base branch show on the
+// stack PR. Add a sync step before each member if the base branch moves under long stacks.
 import { createWorkflow } from "@mastra/core/workflows";
 import { z } from "zod";
 import {
@@ -36,7 +36,7 @@ export type StackOps = {
   readIssue(number: number): Promise<Issue>;
   /** As the fast lane's: the stack issue is this factory's. */
   claim(number: number): Promise<void>;
-  /** Creates `branch` on GitHub from origin/staging, unless it exists. */
+  /** Creates `branch` on GitHub from the remote base branch, unless it exists. */
   createStackBranch(branch: string): Promise<void>;
   /**
    * Creates an issue and links it as the parent's sub-issue: the last one, or right after the sub-issue `after`.
@@ -51,7 +51,7 @@ export type StackOps = {
   retitleIssue(number: number, title: string): Promise<void>;
   /** Replaces one form section (`### <name>`) of an issue's body. */
   updateIssueSection(number: number, name: string, text: string): Promise<void>;
-  /** Runs read-only reviews in a fresh checkout of origin/staging, removed afterwards. */
+  /** Runs read-only reviews in a fresh checkout of the remote base branch, removed afterwards. */
   withReviewCheckout<T>(
     work: (call: (prompt: string) => Promise<string>) => Promise<T>,
   ): Promise<T>;

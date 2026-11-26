@@ -1,35 +1,29 @@
-# Frankenstein
+# Frankenstein software factory
 
-The colonia software factory: a GitHub issue goes in, a draft PR to `staging` comes out, through an agreed plan,
-a coder, checks, cold review, your approval and black-box UAT. **[WORKFLOW.md](WORKFLOW.md)** is how to use it;
-**[mastra/README.md](mastra/README.md)** is how it works.
+Turn a GitHub issue into a reviewed, acceptance-tested draft PR against the branch your team chooses. The board shows the plan, changes, checks, review feedback and human approval gates. One installation serves one target repository; projects do not share run databases or credentials.
 
-| Path | What it is |
-|---|---|
-| `mastra/` | The lane (fast and standard), stacks, the board and the `fx` CLI |
-| `scripts/run-uat.sh`, `scripts/sandbox.sh` | Black-box UAT of a branch: isolated Supabase, production build, Playwright journeys, Lighthouse |
-| `specs/`, `seeds/`, `lighthouse-baseline.json`, `playwright.config.mjs`, `scripts/summarize.mjs` | UAT inputs (human-owned, pinned per work item) |
-| `scripts/factory-pi.mjs` | Runs one Pi agent (planner, coder, reviewer) with its tools guarded to the task worktree |
-| `scripts/preview.sh` | A worktree's dev server against its own seeded Supabase (`wx-preview` on the laptop) |
-| `vm/` | The factory VM: `bootstrap.sh` creates it, `sync.sh` keeps it current, `factory.zsh` has the laptop commands (`factory-ui`, `wx-start`, …), `seed-peer.sh` readies a second laptop |
-| `FEEDBACK.md` | What runs taught us, and what changed because of it |
+## Configure a worker
 
-## Adopting the factory
+1. Use an isolated Linux worker with Git, authenticated `gh`, mise, workmux, tmux, Bash, GNU timeout, flock and tar. Install the Node and pnpm versions in `mise.toml`, your target's tools, and a managed Pi installation with working model credentials. Set `FACTORY_MODEL_PLANNER`, `FACTORY_MODEL_CODER`, `FACTORY_MODEL_REVIEW` and `FACTORY_MODEL_TESTER` to available `provider/model` IDs. The Pi runner uses `PI_MANAGED_INSTALL_ROOT` (default `~/.pi/agent/install`); see `scripts/factory-pi.mjs` for provider-specific credentials and fallback settings.
+2. Fork the factory separately from the target. Edit **`factory.config.json`**: `repo` is the GitHub owner/name; `base` is the draft PR target. Clone that repo at `checkout` with `origin` pointing to it. `workspace` resolves from the factory root; `checkout`, `worktrees` and optional extra read-only `readable` directories resolve from `workspace`. Keep the factory, base checkout and task worktrees separate. Do not point a running factory at a different project.
+3. Set `checks.setup` to ordered commands to prepare a fresh task worktree and `checks.gates` to the required checks, including the full test suite. Each command is an argv array, not a shell string. There is no implicit package manager, formatter, framework or test runner. `paths.tests` limits where the tester role can write; `paths.protected` stops changes and `paths.sensitive` flags changes for human review. Patterns are Node `path.matchesGlob` patterns relative to the target. Keep `skills/core` for workflow reviewers and choose optional packs or add your own ([guide](skills/README.md)). [`examples/go.factory.json`](examples/go.factory.json) is a second profile.
+4. Implement the **acceptance adapter** below and commit your factory configuration and acceptance files. Install `examples/issue-forms/*.yml` in the target's `.github/ISSUE_TEMPLATE/` on its default branch and create the `factory` and `factory-stack` labels. Grant the worker only the repo rights needed for issues, branches and draft PRs. By default only the authenticated user's issues/comments are trusted; set `FACTORY_ISSUE_AUTHORS` to a comma-separated allowlist of additional logins.
+5. In the factory checkout run:
 
-Use one factory checkout and run database per target repository. Start with `factory.config.json` (Nuxt/TypeScript), or copy [`examples/go.factory.json`](examples/go.factory.json) to `factory.config.json` for an example without Node-based project checks. Set `repo` and `base` to your GitHub repository and PR target. `workspace` is relative to the factory root; `checkout` (an existing read-only base checkout), `worktrees` and optional `readable` directories are relative to that workspace. Pick [skill packs](skills/README.md) relative to the factory root, and put project-specific conventions in the target's `AGENTS.md`.
+   ```sh
+   pnpm install --frozen-lockfile
+   mkdir -p mastra/.data
+   pnpm --dir mastra run dev
+   ```
 
-`checks.setup` runs once when provisioning a task worktree. `checks.gates` is a nonempty, ordered list of required checks; the first failure stops the list and reports its output. Each entry is an executable followed by its arguments, **not a shell string**. Use trusted commands, provide the project toolchain in the VM, and include your full test suite. With custom checks the factory does not run the Nuxt setup, automatic ESLint/Prettier fixes or coder-side typecheck. Omit `checks` to keep the entire existing Nuxt flow.
+   Open **http://localhost:4111/board** (SSH-forward the port for a remote worker). Create an issue with the task form, then start its card. See [the workflow](WORKFLOW.md). The board is a privileged operator UI, not a public dashboard: keep it private. Agents have no shell tool, but project setup and test commands execute project code with the worker's permissions. Worktrees are not a sandbox. Use disposable or isolated workers, restrict credentials and egress, and never run untrusted projects on a developer laptop.
 
-To inspect the board in a configured factory environment, run `pnpm install` then `pnpm --dir mastra run dev` and open <http://localhost:4111/board>. The header identifies the local target; the issue list needs authenticated `gh` access. Keep the board on loopback or behind a private tunnel: its actions are not authenticated. Only connect peer factories for the same repo.
+## Acceptance adapter
 
-**Before running another team's first issue:** provision its GitHub issue forms and labels, adapt the Colonia VM bootstrap/sync and black-box UAT to its environment, and review the lane's test-file and sensitive-path rules for its language. Custom checks replace project build/test commands, not those deployment and acceptance policies.
+`acceptance/` belongs to the factory operator, not the task. Each run pins it to a factory commit. After the human approves and the task branch is pushed, the worker extracts only that directory from the pinned commit into a fresh run directory. It calls `bash acceptance/run.sh OWNER/REPO BRANCH SHA` there. Put all adapter scripts and fixtures under `acceptance/`. Use regular files, not symlinks. An adapter can dispatch existing CI or test a disposable, isolated checkout; it must test the **specified SHA**, not a moving branch tip. Clean up its resources on exit.
 
-## UAT
+Print one JSON object to stdout, for example `{"commit":"<actually tested SHA>","pass":false,"detail":"Checkout journey failed at payment confirmation"}`. Exit zero for a completed verdict (including a failed test); use stderr for logs and exit nonzero for infrastructure failures. A wrong SHA, malformed verdict, timeout or missing adapter blocks delivery. The shipped stub intentionally refuses to approve anything. The result is recorded under `.cache/run-*/report.json`.
 
-`scripts/run-uat.sh <client-ref> <factory-commit>` checks the ref out of `client/.bare` into a disposable detached worktree, starts an isolated Supabase on ports 55321–55328 with its committed configured seeds (webhooks first), applies `seeds/uat.sql` (billing only), restores `.cache/fonts` before an offline production build, and runs the black-box Playwright journeys and three production Lighthouse audits. The Nuxt server and browsers run inside a loopback-only network namespace. The fake Resend server captures actual supplier/customer email payloads through `RESEND_BASE_URL`; the test DNS fixture provides only `example.com` MX records. **Slack is not mocked**, so Slack is unreachable during every run; customer-facing requests must not depend on it. Known failures are a human-owned map in `scripts/summarize.mjs` (journey title → reason), currently empty. One run at a time owns the fixed ports (`.cache/uat.lock`). Each page must score at least accessibility 92 and SEO 100 and stay crawlable; the measured baselines are in `lighthouse-baseline.json`.
+## Development
 
-Prerequisites (all in the VM image): Docker with cached Supabase images, cached pnpm packages, Chromium, `bwrap`, `socat`, `psql`, `jq`, Node and pnpm (`mise.toml`), and the Supabase CLI pinned in `package.json` (or `SUPABASE_BIN`).
-
-## Limits
-
-Agents get no shell tool; the factory's own commands run with the VM user's permissions, and that user has Docker access (root-equivalent inside the VM). The tool guard and worktrees are not a sandbox: the VM is. The checked-in `specs/` are writable by the agent's Unix user, so **don't treat the factory as tamper-proof against its own operator**. The real gates are the draft PR and you merging it.
+`pnpm --dir mastra run check` type-checks and exercises the workflow. `node --test scripts/factory-pi.test.mjs` checks the agent guard. See [mastra/README.md](mastra/README.md) for the implementation map.

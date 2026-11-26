@@ -1,29 +1,14 @@
 {
-  "repo": "ColoniaTech/colonia_client",
-  "base": "staging",
+  "repo": "example/project",
+  "base": "main",
   "workspace": "..",
-  "checkout": "client/staging",
-  "worktrees": "client/worktrees",
-  "readable": ["supabase/staging"],
+  "checkout": "project/main",
+  "worktrees": "project/worktrees",
+  "paths": { "tests": ["tests/**"], "protected": [], "sensitive": [] },
+  "checks": { "setup": [], "gates": [["make", "test"]] },
   "skills": {
-    "packs": ["skills/core", "skills/typescript", "skills/nuxt"],
-    "coder": {
-      "always": ["ponytail", "write-tests"],
-      "areas": {
-        "components": {
-          "paths": ["components/**", "app/components/**"],
-          "skills": ["write-component"]
-        },
-        "composables": {
-          "paths": ["composables/**", "app/composables/**"],
-          "skills": ["write-composable"]
-        },
-        "server routes": {
-          "paths": ["server/api/**"],
-          "skills": ["write-server-route"]
-        }
-      }
-    },
-    "codeReviewers": ["architect", "interrogate", "change-impact", "typescript-guidance"]
+    "packs": ["skills/core"],
+    "coder": { "always": ["ponytail"] },
+    "codeReviewers": ["architect", "interrogate", "change-impact"]
   }
 }

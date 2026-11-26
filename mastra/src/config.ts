@@ -19,7 +19,12 @@ export const ProjectChecks = z.strictObject({
 });
 
 const Config = z.object({
-  checks: ProjectChecks.optional(),
+  checks: ProjectChecks,
+  paths: z.object({
+    tests: z.array(z.string().min(1)).min(1),
+    protected: z.array(z.string().min(1)).default([]),
+    sensitive: z.array(z.string().min(1)).default([]),
+  }),
   /** GitHub `owner/name` the issues and PRs live in. */
   repo: z.string().regex(/^[\w.-]+\/[\w.-]+$/),
   /** The branch every task builds on and its draft PR targets. */
@@ -32,7 +37,7 @@ const Config = z.object({
   /** Outside the worktree, what agents may read (e.g. the schema repo). */
   readable: z.array(z.string()).default([]),
   skills: z.object({
-    /** Folders of skills (e.g. skills/core, skills/nuxt), all copied into each worktree's .agents/skills. */
+    /** Folders of skills (e.g. skills/core), all copied into each worktree's .agents/skills. */
     packs: z.array(z.string()).min(1),
     coder: z.object({
       /** Given to every coder call. */
@@ -59,6 +64,7 @@ const at = (path: string) => resolve(workspace, path);
 export const config = {
   repo: raw.repo,
   checks: raw.checks,
+  paths: raw.paths,
   base: raw.base,
   workspace,
   checkout: at(raw.checkout),

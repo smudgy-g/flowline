@@ -1,5 +1,6 @@
 // Drives the whole fast lane with fake side effects, through the same run helpers the CLI uses.
 // A new factory (Mastra instance) per command, sharing one database file, mirrors one `fx` process per command.
+import "./workflow-profile.ts";
 import assert from "node:assert/strict";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -101,20 +102,12 @@ function fakeWorld() {
       world.baselines.push(baseline);
       const kind = world.uatResults.shift()!;
       calls.push(`uat ${kind}`);
+      if (kind === "infrastructure") throw new Error("Acceptance worker unavailable");
       const report: UatReport = {
         ref: branch,
         commit: world.pushed,
         pass: kind === "passed",
-        ...(kind === "infrastructure"
-          ? { failure: "infrastructure" as const }
-          : {}),
-        journeys: [
-          {
-            name: "customer inquiry",
-            status: kind === "client" ? "failed" : "passed",
-            reason: kind === "client" ? "timeout" : null,
-          },
-        ],
+        detail: kind === "client" ? "customer inquiry timed out" : "Passed",
       };
       return { run: "run-x", report };
     },
@@ -185,7 +178,7 @@ test("fast lane: plan, retry on test failure, approve, UAT replan, draft PR", as
     status: "Approve the change",
   });
   assert.deepEqual(calls.slice(0, 6), [
-    "provision 1412-inquiries-hang-slack-down on staging",
+    "provision 1412-inquiries-hang-slack-down on main",
     "pi planner",
     "pi planner",
     "pi coder",
@@ -273,7 +266,7 @@ test("a stack member builds on its stack branch; anything else is refused", asyn
   const bad = await start(fx(), 1501, "--upload-pack=x").catch((e) => e);
   assert.ok(
     bad instanceof Error || bad.status === "failed",
-    "a base that is not staging or stack/<name> must not run",
+    "a base that is not the configured base or stack/<name> must not run",
   );
   assert.ok(!calls.some((c) => c.includes("1501")));
 });
@@ -568,7 +561,7 @@ test("standard: every plan reviewed, at most two automatic revisions, then it wa
 
   let v = await start(fx(), 1500);
   assert.equal(v.waiting?.kind, "plan-approval");
-  assert.ok(calls.includes("skills 7"));
+  assert.ok(calls.includes("skills 6"));
   assert.equal(calls.filter((c) => c === "pi planner").length, 3);
   assert.equal(calls.filter((c) => c === "pi review").length, 12);
   assert.match((v.waiting!.plan as { summary: string }).summary, /Scope 3/);
@@ -599,10 +592,10 @@ test("standard: every plan reviewed, at most two automatic revisions, then it wa
   assert.ok(
     world.prompts.some((p) => p.startsWith("coder:") && p.includes("[architect] logic belongs in the service")),
   );
-  // Two review rounds of five reviewers, plus the unparseable one asked again each round.
+  // Two review rounds of four reviewers, plus the unparseable one asked again each round.
   assert.equal(
     world.prompts.filter((p) => p.startsWith("review:") && !p.includes("drafted plan")).length,
-    12,
+    10,
   );
 });
 

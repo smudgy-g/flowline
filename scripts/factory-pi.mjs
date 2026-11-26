@@ -1,12 +1,13 @@
 import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { execFile, execFileSync } from 'node:child_process'
+import { execFileSync } from 'node:child_process'
 import { basename, dirname, join, matchesGlob, relative, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
 // Besides its worktree, a Pi session may read only factory.config.json's `readable` (e.g. migrations, for schema
 // context), which the factory passes as FACTORY_READABLE.
 const readable = JSON.parse(process.env.FACTORY_READABLE ?? '[]')
+const testPaths = JSON.parse(process.env.FACTORY_TEST_PATHS ?? '[]')
 
 // A tool's path as Pi resolves it: a leading '@' is dropped and '~' is the home folder.
 function toolPath(root, path = '.') {
@@ -23,15 +24,13 @@ function realish(file) {
 const inside = (dir, file) => file === dir || file.startsWith(`${dir}${sep}`)
 
 // Shell is deliberately unavailable: shell grammar cannot be reliably guarded by a
-// deny-list, and would permit out-of-worktree writes. The coder's one custom tool,
-// `check`, takes no input and runs fixed commands.
+// deny-list, and would permit out-of-worktree writes.
 // Reads stay in the worktree (and the migrations) so a session never reaches the
 // VM's logins, the factory's UAT specs, or other tasks.
 // `codemode` runs a script whose tool calls come back through this guard one by one (Pi's nested tool calls),
 // and it can call only the role's own tools.
-export function authorizeTool(worktree, role, event, readRoots = readable) {
+export function authorizeTool(worktree, role, event, readRoots = readable, tests = testPaths) {
   if (event.toolName === 'codemode') return undefined
-  if (event.toolName === 'check') return role === 'coder' ? undefined : { block: true, reason: 'Unapproved tool' }
   if (event.toolName === 'bash' || !['read', 'grep', 'find', 'ls', 'edit', 'write'].includes(event.toolName))
     return { block: true, reason: 'Unapproved tool' }
   const root = realpathSync(worktree)
@@ -55,7 +54,7 @@ export function authorizeTool(worktree, role, event, readRoots = readable) {
   const records = ['factory', 'stack'].map(name => join('.agents', 'artefacts', name))
   if (records.some(dir => local === dir || local.startsWith(`${dir}${sep}`)))
     return { block: true, reason: 'Factory history is read-only' }
-  if (role === 'tester' && !/(?:^|\/)(?:tests\/|[^/]+\.(?:spec|test)\.[cm]?[jt]sx?$)/.test(local))
+  if (role === 'tester' && !tests.some(pattern => matchesGlob(local, pattern)))
     return { block: true, reason: 'Tester writes tests only' }
   return undefined
 }
@@ -70,43 +69,7 @@ function changedPaths(worktree) {
   ])]
 }
 
-// Runs in the worktree with its own toolchain (mise.toml), as the factory's gates do.
-const sh = (worktree, args, signal) => new Promise(done =>
-  execFile('mise', ['exec', '--', ...args], {
-    cwd: worktree, signal, maxBuffer: 64 * 1024 * 1024, timeout: 15 * 60 * 1000,
-    env: { ...process.env, CI: 'true', NUXT_TELEMETRY_DISABLED: '1' },
-  }, (error, stdout, stderr) => done({ ok: !error, out: `${stdout}${stderr}`.trim() })))
-
 const factoryRoot = resolve(dirname(new URL(import.meta.url).pathname), '..')
-// Gates and the UAT build take turns on this lock (ops.ts): together they run the VM out of memory.
-const heavyLock = `${factoryRoot}/.cache/heavy.lock`
-
-/**
- * The coder's `check`: what the factory's lint and typecheck gates would say, so it fixes them in the same call
- * instead of costing a round. ESLint and Prettier fix what they can first, as the gates' autofix does.
- */
-export async function runCheck(worktree, signal) {
-  const files = changedPaths(worktree).filter(f => /\.([cm]?[jt]sx?|vue)$/.test(f) && existsSync(join(worktree, f)))
-  const lint = files.length
-    ? await sh(worktree, ['pnpm', 'exec', 'eslint', '--fix', '--no-warn-ignored', '--', ...files], signal)
-    : { ok: true, out: '' }
-  if (files.length) await sh(worktree, ['pnpm', 'exec', 'prettier', '--write', '--ignore-unknown', '--', ...files], signal)
-  const types = await sh(worktree, ['flock', heavyLock, 'pnpm', 'typecheck'], signal)
-  const tail = text => text.slice(-6000)
-  // Passed: record the exact code it passed on, so the lint and typecheck gates can skip a repeat (ops.ts runGates).
-  if (lint.ok && types.ok) {
-    const tree = execFileSync('bash', [join(factoryRoot, 'scripts/content-tree.sh')], { cwd: worktree, encoding: 'utf8' })
-    mkdirSync(join(worktree, '.agents/artefacts/factory'), { recursive: true })
-    writeFileSync(join(worktree, '.agents/artefacts/factory/checked-tree'), tree.trim())
-  }
-  return [
-    lint.ok ? 'lint: passed' : `lint: failed\n${tail(lint.out)}`,
-    types.ok ? 'typecheck: passed' : `typecheck: failed\n${tail(types.out)}`,
-  ].join('\n\n')
-}
-
-const hasCoderCheck = role => role === 'coder' && process.env.FACTORY_CUSTOM_CHECKS !== '1'
-
 export async function loadFactoryResources(worktree, role = 'review') {
   const install = process.env.PI_MANAGED_INSTALL_ROOT || join(homedir(), '.pi/agent/install')
   const version = readFileSync(join(install, 'current-version'), 'utf8').trim()
@@ -115,19 +78,10 @@ export async function loadFactoryResources(worktree, role = 'review') {
   const sdk = await import(pathToFileURL(join(dist, 'index.js')).href)
   // As the pi CLI does at start-up: honour HTTPS_PROXY (the factory VM's egress proxy). No-op without one.
   ;(await import(pathToFileURL(join(dist, 'core/http-dispatcher.js')).href)).configureHttpDispatcher()
-  const { Type } = await import(pathToFileURL(join(install, 'releases', version, 'node_modules/typebox/build/index.mjs')).href)
   const loader = new sdk.DefaultResourceLoader({
     cwd: worktree, agentDir: sdk.getAgentDir(), noExtensions: true,
     extensionFactories: [sdk.createCodemodeExtension({ models: false }), (pi) => {
       pi.on('tool_call', (event) => authorizeTool(worktree, role, event))
-      if (hasCoderCheck(role)) pi.registerTool({
-        name: 'check', label: 'Check',
-        description: "Lint (auto-fixing what it can) and typecheck the worktree, as the factory's gates will. Takes a minute or two.",
-        parameters: Type.Object({}),
-        async execute(_id, _params, signal) {
-          return { content: [{ type: 'text', text: await runCheck(worktree, signal) }], details: {} }
-        },
-      })
     }],
   })
   await loader.reload()
@@ -204,7 +158,7 @@ async function main() {
     // Paths the prompt names (e.g. the plan's step), so a step gets its area's skills before it touches the file.
     const planned = prompt.match(/[\w@.()[\]-]+(?:\/[\w@.()[\]-]+)+/g) ?? []
     const skills = requireSkills(loader, [...new Set([...named, ...coderSkills([...paths, ...planned])])])
-    instruction = withSkills(skills, "Follow AGENTS.md's testing rules.\nTo delete a file, write it empty: the factory removes empty files.\n\n")
+    instruction = withSkills(skills, "Follow AGENTS.md's testing rules.\n\n")
   }
   const runtime = await sdk.ModelRuntime.create()
   const key = existsSync(fallbackKeyFile) ? readFileSync(fallbackKeyFile, 'utf8').trim() : ''
@@ -219,7 +173,7 @@ async function main() {
   const { session } = await sdk.createAgentSession({
     cwd: worktree, model, modelRuntime: runtime, resourceLoader: loader,
     tools: role === 'review' || role === 'planner' ? ['read', 'grep', 'find', 'ls', 'codemode']
-      : ['read', 'grep', 'find', 'ls', 'edit', 'write', 'codemode', ...(hasCoderCheck(role) ? ['check'] : [])],
+      : ['read', 'grep', 'find', 'ls', 'edit', 'write', 'codemode'],
     sessionManager: sdk.SessionManager.inMemory(),
   })
   const timer = setTimeout(() => { void session.abort() }, 30 * 60 * 1000)
