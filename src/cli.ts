@@ -46,12 +46,20 @@ async function confirm(v: RunView, issue: string): Promise<true> {
   return true
 }
 
+/** The comment block at the top of this file, which is the only place the commands are written down. */
+async function usage() {
+  const source = await readFile(new URL(import.meta.url.replace(/\.js$/, '.ts')), 'utf8').catch(() =>
+    readFile(new URL(import.meta.url), 'utf8'))
+  console.log(source.split('\n').filter(l => l.startsWith('//')).slice(0, 19).join('\n').replaceAll('// ', '').replace(/^\/\//gm, ''))
+}
+
 async function main() {
   const { positionals, values } = parseArgs({ allowPositionals: true, options: { summary: { type: 'string' }, tests: { type: 'string' }, json: { type: 'boolean' }, note: { type: 'string' }, proceed: { type: 'boolean' }, baseline: { type: 'string' }, base: { type: 'string' } } })
   const [command, issueArg, ...rest] = positionals
   // `setup` is the one command that runs before a project is configured, so nothing that reads the config may be
   // imported until after it: every import below is deferred for that reason.
   if (command === 'setup') return (await import('./setup.ts')).setup(values.base)
+  if (!command || command === 'help' || command === '--help') return usage()
   if (command === 'board') {
     const { url } = await (await import('./server.ts')).startBoard()
     const { config, projectRoot } = await import('./config.ts')
@@ -107,8 +115,7 @@ async function main() {
       return (await Promise.all(ids.map(runId => resume(factory, runId, {})))).forEach(v => print(v))
     }
     default:
-      console.log((await readFile(new URL(import.meta.url), 'utf8')).split('\n').filter(l => l.startsWith('//'))
-      .slice(0, 19).join('\n').replaceAll('// ', '').replaceAll('//', ''))
+      return usage()
   }
 }
 
