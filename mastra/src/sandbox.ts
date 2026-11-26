@@ -15,7 +15,7 @@ const cli: Cli = argv => new Promise((done, fail) => {
 });
 const rows = z.array(z.object({ name: z.string(), status: z.string(), workspaces: z.array(z.string()).optional() }));
 const id = (item: string, offline = false) => {
-  if (!/^[0-9]+(?:-[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)?$/.test(item) || item.length > 54) throw Error('Invalid sandbox work item');
+  if (!/^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$/.test(item) || item.length > 54) throw Error('Invalid sandbox work item');
   return (offline ? 'fx-uat-' : 'fx-') + item;
 };
 // The CLI and board are separate processes. SQLite releases this short admission lock even if its owner dies.

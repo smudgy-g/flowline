@@ -17,6 +17,7 @@ test('offline lifecycle; preserve argv and status; invalid ids, absent VMs and f
     return {code:0,output:''};
   },{kit:'shell',cpus:2,memory:'2g',allowlist:['registry.npmjs.org'],maxConcurrent:1},join(dir,'lock'));
   await assert.rejects(s.create('../escape',dir),/Invalid/);
+  await assert.rejects(s.create('-flag',dir),/Invalid/);
   await assert.rejects(s.exec('42-test',['true'],{timeoutMinutes:1}),/Missing/);
   await s.create('42-test',dir,true);
   assert.ok(calls.some(a=>a.includes('--deny-network') && a.includes('**')));
@@ -27,3 +28,4 @@ test('offline lifecycle; preserve argv and status; invalid ids, absent VMs and f
   await s.stop('42-test',true); await s.remove('42-test',true);
   assert.deepEqual(calls.at(-1),['rm','--force','fx-uat-42-test']);
 });
+
