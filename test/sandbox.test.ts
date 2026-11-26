@@ -3,6 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
+import './workflow-profile.ts';
 import { sandboxClient } from '../src/sandbox.ts';
 
 test('offline lifecycle; preserve argv and status; invalid ids, absent VMs and full workers fail closed', async t => {

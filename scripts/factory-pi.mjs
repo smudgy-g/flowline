@@ -75,7 +75,8 @@ function changedPaths(worktree) {
   ])]
 }
 
-const factoryRoot = resolve(dirname(new URL(import.meta.url).pathname), '..')
+const installRoot = resolve(dirname(new URL(import.meta.url).pathname), '..')
+const stateRoot = process.env.FACTORY_STATE_ROOT ?? join(installRoot, '.cache')
 
 /**
  * The coder's `check`: what the factory's lint and typecheck gates would say, so it fixes them in the same call
@@ -83,13 +84,13 @@ const factoryRoot = resolve(dirname(new URL(import.meta.url).pathname), '..')
  */
 export async function runCheck(worktree, signal) {
   signal?.throwIfAborted()
-  const { projectCommands } = await import('../mastra/src/project-commands.ts')
-  const { config } = await import('../mastra/src/config.ts')
+  const { projectCommands } = await import('../src/project-commands.ts')
+  const { config } = await import('../src/config.ts')
   const files = changedPaths(worktree).filter(f => existsSync(join(worktree, f)))
   const result = await projectCommands(worktree, [...config.commands.autofix, ...config.commands.check], files)
   signal?.throwIfAborted()
   if (result.ok) {
-    const tree = execFileSync('bash', [join(factoryRoot, 'scripts/content-tree.sh')], gitOptions(worktree))
+    const tree = execFileSync('bash', [join(installRoot, 'scripts/content-tree.sh')], gitOptions(worktree))
     const records = process.env.FACTORY_ITEM_RECORDS
     mkdirSync(records, { recursive: true })
     writeFileSync(join(records, 'checked-tree'), tree.trim())
@@ -144,7 +145,7 @@ const anthropicKeyFile = join(homedir(), '.config/factory/anthropic-api-key')
 export const isUsageLimit = (message = '') => /usage.?limit|insufficient_quota|quota exceeded|out of budget/i.test(message)
 
 // Once Codex is out, later calls go straight to the fallback until the limit should have reset.
-const limitFile = `${factoryRoot}/.cache/pi-limits/openai-codex`
+const limitFile = `${stateRoot}/pi-limits/openai-codex`
 const LIMIT_HOURS = 1 // ponytail: fixed wait; read the reset time from the error if Codex sends one we can rely on
 const codexOut = () => { try { return Date.now() < Date.parse(readFileSync(limitFile, 'utf8')) } catch { return false } }
 function markCodexOut() {

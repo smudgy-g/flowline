@@ -8,14 +8,15 @@ import test from "node:test";
 // The documented Go profile, with its commands stood in for by short ones, all dispatched to a fake sbx.
 test("checks and gates run in the item's sandbox, in order, stopping at the first failure", async t => {
   const root = await mkdtemp(join(tmpdir(), "factory-checks-"));
-  const previous = { root: process.env.FACTORY_ROOT, path: process.env.PATH };
+  const previous = { path: process.env.PATH };
   t.after(async () => {
     process.env.PATH = previous.path;
-    if (previous.root === undefined) delete process.env.FACTORY_ROOT; else process.env.FACTORY_ROOT = previous.root;
+    delete process.env.FACTORY_PROJECT;
+    delete process.env.FACTORY_STATE;
     await rm(root, { recursive: true, force: true });
   });
-  const profile = JSON.parse(await readFile(new URL("../../examples/go.factory.json", import.meta.url), "utf8"));
-  Object.assign(profile, { workspace: ".", checkout: "base", worktrees: "trees" });
+  const profile = JSON.parse(await readFile(new URL("../examples/go.factory.json", import.meta.url), "utf8"));
+  profile.worktrees = "../trees";
   Object.assign(profile.commands, { autofix: [["fix", "{changedCode}"]], check: [["vet"]], gates: [["suite"], ["never"]] });
   const base = join(root, "base");
   const worktree = join(root, "trees", "42-item");
@@ -26,7 +27,8 @@ test("checks and gates run in the item's sandbox, in order, stopping at the firs
   git("update-ref", "refs/remotes/origin/main", "HEAD");
   git("worktree", "add", "-qb", "42-item", worktree);
   await writeFile(join(worktree, "main.go"), "package main\n");
-  await writeFile(join(root, "factory.config.json"), JSON.stringify(profile));
+  await mkdir(join(base, ".factory"), { recursive: true });
+  await writeFile(join(base, ".factory/config.json"), JSON.stringify(profile));
   await writeFile(join(root, "sbx"), `#!/bin/bash
 cd ${root}; shift
 case "$1" in
@@ -34,7 +36,8 @@ list) echo '[{"name":"fx-42-item","status":"running"}]';;
 exec) shift; while [[ $1 == --env || $1 == --workdir ]]; do shift 2; done; shift 6; echo "ran $*" >>dispatched; [[ $1 != suite ]];;
 stop) echo stopped >>dispatched;;
 esac\n`, { mode: 0o755 });
-  process.env.FACTORY_ROOT = root;
+  process.env.FACTORY_PROJECT = base;
+  process.env.FACTORY_STATE = join(root, "state");
   process.env.PATH = `${root}:${previous.path}`;
   const { realOps } = await import("../src/ops.ts");
   const result = await realOps.runGates(worktree);

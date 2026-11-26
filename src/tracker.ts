@@ -2,7 +2,7 @@
 // Trusted factory code on the host, never in a sandbox and never reachable by an agent.
 import { execFile } from 'node:child_process';
 import { z } from 'zod';
-import { config, factoryRoot } from './config.ts';
+import { config, projectRoot } from './config.ts';
 
 /** Safe in a branch name, a path and a run id; the factory only ever echoes it. */
 export const ItemId = z.string().regex(/^[A-Za-z0-9._-]{1,64}$/);
@@ -23,7 +23,7 @@ type Call = (argv: string[], stdin: string) => Promise<string>;
 const call: Call = (argv, stdin) => new Promise((done, fail) => {
   const [bin, ...rest] = config.tracker.command;
   const child = execFile(bin, [...rest, ...argv], {
-    cwd: factoryRoot, maxBuffer: 32 * 1024 * 1024,
+    cwd: projectRoot, maxBuffer: 32 * 1024 * 1024,
     env: { ...process.env, ...config.tracker.env, FACTORY_REPO: config.repo, FACTORY_BASE: config.base, FACTORY_CHECKOUT: config.checkout },
   }, (error, stdout, stderr) => error
     ? fail(new Error(`tracker ${argv[0]} failed: ${(stderr || error.message).slice(-2000)}`))

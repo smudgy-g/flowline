@@ -3,12 +3,12 @@ import { mkdir, realpath } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { z } from 'zod';
-import { config, factoryRoot } from './config.ts';
+import { config, stateRoot } from './config.ts';
 
 type Result = { code: number; output: string; stdout?: string };
 type Cli = (argv: string[]) => Promise<Result>;
 const cli: Cli = argv => new Promise((done, fail) => {
-  execFile('sbx', ['--no-input', ...argv], { cwd: factoryRoot, maxBuffer: 64 * 1024 * 1024 }, (err, stdout, stderr) => {
+  execFile('sbx', ['--no-input', ...argv], { cwd: stateRoot, maxBuffer: 64 * 1024 * 1024 }, (err, stdout, stderr) => {
     if (err && typeof err.code !== 'number') return fail(err);
     done({ code: Number(err?.code ?? 0), output: stdout + stderr, stdout });
   });
@@ -25,7 +25,7 @@ async function admit<T>(file: string, op: () => Promise<T>) {
   try { db.exec('BEGIN IMMEDIATE'); return await op(); } finally { db.close(); }
 }
 export function sandboxClient(call: Cli = cli, settings = config.sandbox,
-  lock = `${factoryRoot}/mastra/.data/sandbox-admission.sqlite`) {
+  lock = `${stateRoot}/sandbox-admission.sqlite`) {
   const must = async (args: string[]) => {
     const r = await call(args);
     if (r.code) throw Error(`sbx ${args[0]} (${r.code}): ${r.output.slice(-3000)}`);

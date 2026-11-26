@@ -18,7 +18,7 @@ import {
 import { z } from "zod";
 import { basename, dirname, join, matchesGlob } from "node:path";
 import { promisify } from "node:util";
-import { config, factoryRoot } from "./config.ts";
+import { config, installRoot, projectRoot, stateRoot } from "./config.ts";
 import { sandbox } from './sandbox.ts';
 import { projectCommands } from './project-commands.ts';
 import { taskGitEnv } from './worktree-git.ts';
@@ -30,9 +30,8 @@ import {
   type Issue,
 } from "./rules.ts";
 
-export { factoryRoot } from "./config.ts";
+export { installRoot, projectRoot, stateRoot } from "./config.ts";
 
-const workspace = config.workspace;
 const client = config.checkout;
 const worktrees = config.worktrees;
 export const issueRepo = config.repo;
@@ -93,7 +92,7 @@ async function run(
  * Pause requests, one empty file each: `all`, or a run's id. They outlive server restarts, so a sync can come between
  * pausing and resuming.
  */
-const pausedDir = `${factoryRoot}/mastra/.data/paused`;
+const pausedDir = `${stateRoot}/paused`;
 const pauseTarget = (target: string) => {
   if (!/^(all|item-[A-Za-z0-9._-]{1,64})$/.test(target))
     throw new Error(`Can't pause ${target}`);
@@ -122,7 +121,7 @@ const GATE_MINUTES = 40;
 export const historyDir = (worktree: string) => {
   const item = basename(worktree);
   if (!/^[a-zA-Z0-9][a-zA-Z0-9-]*$/.test(item)) throw Error('Invalid work item');
-  return `${factoryRoot}/mastra/.data/items/${item}`;
+  return `${stateRoot}/items/${item}`;
 };
 
 export const historyFile = (worktree: string) =>
@@ -133,14 +132,14 @@ export const checksLog = (worktree: string) =>
   `${historyDir(worktree)}/checks.log`;
 
 const archiveDir = (workItem: string) =>
-  `${factoryRoot}/mastra/.data/history/${workItem}`;
+  `${stateRoot}/history/${workItem}`;
 
 /**
  * A stack has no worktree (nobody edits its branch directly), so its record lives in the factory's data: the
  * approved design and its history. Each member gets a read copy in its worktree's `.agents/artefacts/stack/`.
  */
 export const stackDir = (branch: string) =>
-  `${factoryRoot}/mastra/.data/stacks/${branch.replace(/^stack\//, "")}`;
+  `${stateRoot}/stacks/${branch.replace(/^stack\//, "")}`;
 
 /** Adds one entry to the history.md in `dir`: a heading with the time, then the detail. */
 async function addEntry(dir: string, title: string, body = ""): Promise<void> {
@@ -292,7 +291,7 @@ async function autofix(worktree: string): Promise<void> {
 async function coderChecked(worktree: string): Promise<boolean> {
   const recorded = await readFile(`${historyDir(worktree)}/checked-tree`, "utf8").catch(() => "");
   if (!recorded) return false;
-  const now = await run(worktree, "bash", [`${factoryRoot}/scripts/content-tree.sh`]);
+  const now = await run(worktree, "bash", [`${installRoot}/scripts/content-tree.sh`]);
   return recorded.trim() === now;
 }
 
@@ -303,14 +302,15 @@ async function remoteHead(worktree: string, branch: string): Promise<string> {
 }
 
 /** The whole task change against its base, for a person to read; untracked files show as added. */
-/** UAT input files that changed between `baseline` and the factory's HEAD, with HEAD; null when none did. */
+/** Acceptance inputs that changed between `baseline` and the base branch's tip, with that tip; null when none did. */
 export async function newerUatInputs(
   baseline: string,
 ): Promise<{ head: string; files: string[] } | null> {
-  const head = await run(factoryRoot, "git", ["rev-parse", "HEAD"]);
+  await run(projectRoot, "git", ["fetch", "origin", config.base]).catch(() => "");
+  const head = await run(projectRoot, "git", ["rev-parse", `origin/${config.base}`]);
   if (head === baseline) return null;
   const files = (
-    await run(factoryRoot, "git", [
+    await run(projectRoot, "git", [
       "diff",
       "--name-only",
       baseline,
@@ -443,15 +443,19 @@ export const realOps: Ops = {
     );
   },
 
-  async uatBaseline(at = "HEAD", after) {
-    const commit = await run(factoryRoot, "git", [
-      "rev-parse",
-      "--verify",
-      `${at}^{commit}`,
-    ]);
-    // Forward only along factory history, so a run can't be pointed back at inputs it already failed.
+  /**
+   * Pins the acceptance inputs to a commit on the base branch. A task branch can edit `.factory/acceptance` in its
+   * own worktree all it likes: acceptance runs what a human merged into the base branch, and nothing else.
+   */
+  async uatBaseline(at = `origin/${config.base}`, after) {
+    await run(projectRoot, "git", ["fetch", "origin", config.base]).catch(() => "");
+    const commit = await run(projectRoot, "git", ["rev-parse", "--verify", `${at}^{commit}`]);
+    await run(projectRoot, "git", ["merge-base", "--is-ancestor", commit, `origin/${config.base}`]).catch(() => {
+      throw new Error(`Acceptance inputs must be on ${config.base}: ${commit} is not`);
+    });
+    // Forward only along the base branch, so a run can't be pointed back at inputs it already failed.
     if (after)
-      await run(factoryRoot, "git", [
+      await run(projectRoot, "git", [
         "merge-base",
         "--is-ancestor",
         after,
@@ -463,7 +467,7 @@ export const realOps: Ops = {
       });
     // Only regular files, all present: a symlink in the inputs could point a UAT run outside the tree.
     const paths = (
-      await run(factoryRoot, "git", [
+      await run(projectRoot, "git", [
         "ls-tree",
         "-r",
         "--full-tree",
@@ -527,9 +531,9 @@ export const realOps: Ops = {
   async runPi(worktree, role, prompt) {
     await checkWorktree(worktree);
     return run(
-      factoryRoot,
+      installRoot,
       "node",
-      [`${factoryRoot}/scripts/factory-pi.mjs`, worktree, role, prompt],
+      [`${installRoot}/scripts/factory-pi.mjs`, worktree, role, prompt],
       {
         FACTORY_TASK_GIT: JSON.stringify(await taskGitEnv(client,worktree)),
         FACTORY_ITEM_RECORDS: historyDir(worktree),
@@ -537,6 +541,8 @@ export const realOps: Ops = {
         FACTORY_READABLE: JSON.stringify([...config.readable, historyDir(worktree)]),
         FACTORY_TEST_PATHS: JSON.stringify(config.paths.tests),
         FACTORY_CODER_SKILLS: JSON.stringify(config.skills.coder),
+        FACTORY_STATE_ROOT: stateRoot,
+        FACTORY_PROJECT: projectRoot,
       },
     );
   },
@@ -547,8 +553,8 @@ export const realOps: Ops = {
 
   async checkSkills(worktree, skills) {
     await checkWorktree(worktree);
-    await run(factoryRoot, "node", [
-      `${factoryRoot}/scripts/factory-pi.mjs`,
+    await run(installRoot, "node", [
+      `${installRoot}/scripts/factory-pi.mjs`,
       worktree,
       "check",
       JSON.stringify(skills),
@@ -612,13 +618,13 @@ export const realOps: Ops = {
     const commit = await remoteHead(client,branch);
     if (!/^[a-f0-9]{40,64}$/.test(commit) || await run(client,'git',['rev-parse',`refs/heads/${branch}`]) !== commit) throw Error('Local task commit does not match remote');
     await realOps.uatBaseline(baseline);
-    const root = `${factoryRoot}/.cache`;
+    const root = `${stateRoot}/cache`;
     await mkdir(root,{recursive:true});
     const dir = await mkdtemp(`${root}/run-`), inputs = `${dir}/inputs`, scratch = `${dir}/scratch`, source = `${dir}/source`;
     for (const sub of [inputs,scratch,source]) await mkdir(sub);
-    // The adapter and its fixtures come from the approved factory commit, never from the task branch.
-    await run(factoryRoot,'git',['archive','-o',`${dir}/inputs.tar`,baseline,'--',...config.acceptance.inputs]);
-    await run(factoryRoot,'tar',['-xf',`${dir}/inputs.tar`,'-C',inputs]);
+    // The adapter and its fixtures come from the base branch, never from the task branch under test.
+    await run(projectRoot,'git',['archive','-o',`${dir}/inputs.tar`,baseline,'--',...config.acceptance.inputs]);
+    await run(projectRoot,'tar',['-xf',`${dir}/inputs.tar`,'-C',inputs]);
     await run(client,'git',['archive','-o',`${source}/project.tar`,commit]);
     // Never reuse an offline sandbox, even after an infrastructure failure.
     await sandbox.remove(branch,true);

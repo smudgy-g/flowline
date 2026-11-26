@@ -11,7 +11,8 @@ import {
   closeIssue,
   factoryIssues,
   factoryName,
-  factoryRoot,
+  installRoot,
+  stateRoot,
   newerUatInputs,
   releaseIssue,
   checksLog,
@@ -372,7 +373,7 @@ export function boardRoutes(factory: () => Factory) {
       requiresAuth: false,
       handler: async (c) =>
         c.html(
-          (await readFile(`${factoryRoot}/mastra/src/board.html`, "utf8"))
+          (await readFile(`${installRoot}/src/board.html`, "utf8"))
             .replaceAll("{{repo}}", config.repo)
             .replaceAll("{{base}}", config.base),
         ),
@@ -479,7 +480,7 @@ export function boardRoutes(factory: () => Factory) {
           ? await readFile(checksLog(lane.worktree), "utf8").catch(() =>
               // Runs from before the log moved into the worktree.
               readFile(
-                `${factoryRoot}/mastra/.data/logs/${lane.workItem}.log`,
+                `${stateRoot}/logs/${lane.workItem}.log`,
                 "utf8",
               ).catch(() => ""),
             )

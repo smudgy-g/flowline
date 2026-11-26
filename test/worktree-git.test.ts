@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import './workflow-profile.ts';
 import { taskGitEnv } from '../src/worktree-git.ts';
 
 test('host git uses registered gitdir, not a planted .git, hook or fsmonitor',async t=>{

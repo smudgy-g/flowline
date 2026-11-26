@@ -1,24 +1,18 @@
 // Starting, reading and resuming runs: fast-lane tasks and stacks. The `fx` CLI, the board and the tests go through here.
 import { Mastra } from '@mastra/core/mastra'
-import { MastraCompositeStore, type ObservabilityStorage } from '@mastra/core/storage'
 import type { ApiRoute } from '@mastra/core/server'
 import { createWorkflowStateReader } from '@mastra/core/workflows'
 import { LibSQLStore } from '@mastra/libsql'
-import { PinoLogger } from '@mastra/loggers'
-import { MastraStorageExporter, Observability, SensitiveDataFilter } from '@mastra/observability'
 import { createFastLane, initialState, type LaneState, type Ops } from './fast-lane.ts'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
-import { config, factoryRoot } from './config.ts'
+import { config, stateRoot } from './config.ts'
 import { createStack, initialStackState, type Members, type StackOps, type StackState } from './stack.ts'
 
 const noStackOps = new Proxy({} as StackOps, { get: () => async () => { throw new Error('This factory has no stack ops') } })
 
-/**
- * `apiRoutes` adds pages to the `mastra dev` server (the board); the CLI and tests leave it out. `observability`, the
- * server's only, is where Studio's traces and logs go (a DuckDB file takes one process, so the CLI can't share it).
- */
-export function createFactory(ops: Ops, databaseUrl: string, apiRoutes: ApiRoute[] = [], stackOps: StackOps = noStackOps, observability?: ObservabilityStorage) {
+/** `apiRoutes` are the board's pages, added when the board server builds the factory; the CLI and tests leave them out. */
+export function createFactory(ops: Ops, databaseUrl: string, apiRoutes: ApiRoute[] = [], stackOps: StackOps = noStackOps) {
   // A stack's members are fast-lane runs in this same factory, which exists once the constructor returns.
   const self: { factory?: any } = {}
   const members: Members = {
@@ -31,23 +25,10 @@ export function createFactory(ops: Ops, databaseUrl: string, apiRoutes: ApiRoute
       fastLane: createFastLane(ops),
       stack: createStack(stackOps, members),
     },
-    storage: observability ? new MastraCompositeStore({ id: 'factory', default: runs, domains: { observability } }) : runs,
-    // Only the laptop's board tunnels may call the API from a browser: this factory's (4111) and a second
-    // factory's (4112), whose cards the board merges in. Mastra's default lets any web page call it.
+    storage: runs,
+    // Only a board tunnel may call the API from a browser: this factory's (4111) and a second factory's (4112),
+    // whose cards the board merges in. Mastra's default lets any web page call it.
     server: { host: '127.0.0.1', apiRoutes, cors: { origin: BOARD_ORIGINS } },
-    ...(observability && {
-      logger: new PinoLogger({ name: 'factory', level: 'info' }),
-      observability: new Observability({
-        configs: {
-          default: {
-            serviceName: 'factory',
-            logging: { level: 'info' },
-            exporters: [new MastraStorageExporter()],
-            spanOutputProcessors: [new SensitiveDataFilter()],
-          },
-        },
-      }),
-    }),
   })
   self.factory = mastra
   return mastra
@@ -128,7 +109,7 @@ export async function list(factory: Factory): Promise<RunView[]> {
  * and run ids. Recorded on first use, checked on every start.
  */
 export async function checkOwner(): Promise<void> {
-  const file = `${factoryRoot}/mastra/.data/owner.json`;
+  const file = `${stateRoot}/owner.json`;
   const owner = { repo: config.repo, tracker: config.tracker.command.join(' ') };
   const recorded = await readFile(file, 'utf8').then(JSON.parse, () => null);
   if (!recorded) {

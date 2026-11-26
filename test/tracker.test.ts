@@ -5,6 +5,7 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
+import './workflow-profile.ts';
 import { trackerClient } from '../src/tracker.ts';
 
 test('the client rejects a reply the lane could not trust', async () => {
@@ -24,7 +25,7 @@ test('the local adapter keeps items in the repo, claims exclusively and accepts 
   git('commit', '-qm', 'base', '--allow-empty');
   await mkdir(join(root, '.factory/items'), { recursive: true });
   await writeFile(join(root, '.factory/items/health.md'), '# Add a health endpoint\n\n### Outcome\n\nIt answers 200.\n\n### Lane\n\nfast lane\n');
-  const adapter = join(import.meta.dirname, '../../trackers/local.mjs');
+  const adapter = join(import.meta.dirname, '../trackers/local.mjs');
   const local = trackerClient(async (argv, stdin) =>
     execFileSync('node', [adapter, ...argv], { input: stdin, encoding: 'utf8', env: { ...process.env, FACTORY_CHECKOUT: root, FACTORY_BASE: 'main' } }));
 
@@ -69,9 +70,9 @@ test('the local adapter keeps items in the repo, claims exclusively and accepts 
 
 test('state belongs to one repo and one tracker', async t => {
   // config is a module singleton, so this checks the real checkout's owner file and puts it back.
-  const { factoryRoot, config } = await import('../src/config.ts');
+  const { stateRoot, config } = await import('../src/config.ts');
   const { checkOwner } = await import('../src/runs.ts');
-  const file = join(factoryRoot, 'mastra/.data/owner.json');
+  const file = join(stateRoot, 'owner.json');
   const before = await readFile(file, 'utf8').catch(() => null);
   t.after(async () => { before === null ? await rm(file, { force: true }) : await writeFile(file, before); });
 
