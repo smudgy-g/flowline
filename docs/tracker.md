@@ -4,10 +4,12 @@ The lane needs sixteen things from a tracker: read an item, claim it, list what 
 
 ## The contract
 
-One **tracker adapter** per factory, named in `factory.config.json`:
+One **tracker adapter** per project, named in `.factory/config.json`. A bare name is one the factory ships
+(`local`, the default, or `github`); anything else is your own command:
 
 ```jsonc
-"tracker": { "command": ["node", "trackers/local.mjs"], "env": {} }
+"tracker": { "command": ["github"], "env": {} }
+"tracker": { "command": ["./tools/jira-tracker.py"], "env": { "JIRA_PROJECT": "AUTH" } }
 ```
 
 The factory runs `<command> <verb> [args…]` from the project root with that `env`, never a shell string. Input beyond the arguments arrives on stdin; the reply is one JSON value on stdout. A nonzero exit is an infrastructure failure, and the run waits as `error` rather than guessing. The adapter is trusted factory code and runs on the host, not in a sandbox: it holds whatever credentials the tracker needs, and no agent can call it.
@@ -33,9 +35,9 @@ Only `read` output reaches an agent, and only after the adapter has filtered by 
 
 ## Shipped adapters
 
-**`trackers/local.mjs` (default).** Items are Markdown files in the target repo under `.factory/items/<id>.md`, with the same `### Outcome`, `### Lane`, `### PRs in order` headings the GitHub forms produce. Comments are `## comment` sections appended to the file; Ids are the file's own name — `health-endpoint.md` is item `health-endpoint` — and `create` slugs the title, suffixing `-2` on a clash. `claim` writes `.factory/claims/<id>` exclusively, and a closed item gets `<id>.closed` beside it. `deliver` pushes nothing: it writes `.factory/delivered/<id>.md` with the branch, base, title and body, returns a `file://` url, and `delivered` reports `accepted` once the base branch contains the branch tip. No network, no account, no remote.
+**`local` (the default).** Items are Markdown files in the target repo under `.factory/items/<id>.md`, with the same `### Outcome`, `### Lane`, `### PRs in order` headings the GitHub forms produce. Comments are `## comment` sections appended to the file; Ids are the file's own name — `health-endpoint.md` is item `health-endpoint` — and `create` slugs the title, suffixing `-2` on a clash. `claim` writes `.factory/claims/<id>` exclusively, and a closed item gets `<id>.closed` beside it. `deliver` pushes nothing: it writes `.factory/delivered/<id>.md` with the branch, base, title and body, returns a `file://` url, and `delivered` reports `accepted` once the base branch contains the branch tip. No network, no account, no remote.
 
-**`trackers/github.mjs`.** Today's `gh` behaviour, unchanged in substance: issues labelled `factory`/`factory-stack`, `factory:<name>` claim labels, sub-issues for stack members, draft PRs, and `MERGED` as accepted.
+**`github`.** Today's `gh` behaviour, unchanged in substance: issues labelled `factory`/`factory-stack`, `factory:<name>` claim labels, sub-issues for stack members, draft PRs, and `MERGED` as accepted.
 
 ## What changes in the factory
 
