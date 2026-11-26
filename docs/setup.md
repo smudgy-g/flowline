@@ -170,13 +170,29 @@ cd ~/factory && node mastra/src/cli.ts start basket-discount
 node mastra/src/cli.ts status basket-discount
 ```
 
-or `pnpm --dir mastra run dev` and open **http://localhost:4111/board** through an SSH tunnel:
+or start the board on the worker and watch it from your own machine:
 
 ```sh
-ssh -N -L 4111:127.0.0.1:4111 worker@<worker-host>
+pnpm --dir mastra run dev        # on the worker
 ```
 
-The board is unauthenticated: keep it on loopback and reach it only through the tunnel.
+Put the worker in `~/.ssh/config` once, with the board's tunnel built in, so every later command is short:
+
+```
+Host factory-worker
+  HostName <worker-host>
+  User worker
+  IdentityFile ~/.ssh/factory_worker
+  LocalForward 4111 127.0.0.1:4111
+```
+
+Then `ssh factory-worker` gives you a shell **and** the tunnel, `ssh -fN factory-worker` gives you the tunnel
+alone, and `ssh factory-worker 'cd ~/factory && node mastra/src/cli.ts status'` runs one command. Open
+**http://localhost:4111/board**. The board is unauthenticated: keep it on loopback and reach it only through the
+tunnel.
+
+The board remembers other factories you have tunnelled in, in the browser's local storage, and shows a red banner
+for any it cannot reach. **`/board?peers=`** forgets them; `?peers=worker2:4112` sets them.
 
 ## Troubleshooting
 
@@ -196,3 +212,4 @@ Every one of these came up during this setup.
 | `Work item X already has a run` | A run exists, including a failed one | `fx status X`, then `fx retry X`; clean up to start over |
 | `This state belongs to <repo> via <tracker>` | `mastra/.data` was built against a different repo or tracker | Use a separate factory checkout, or clear `mastra/.data` |
 | Nothing listed, title shows "Work item" | The item file has no `# ` heading | Add one |
+| `Can't reach the <name> factory` banner | A peer factory remembered from an earlier session | Open `/board?peers=` to forget it |

@@ -625,7 +625,8 @@
         Date.now() - c.since > OVERDUE_MIN * 60000;
       const isTest = (f) =>
         /(?:^|\/)[^/]+\.(?:spec|test)\.[cm]?[jt]sx?$/.test(f);
-      // Factories this board shows: its own, plus any others tunnelled to the laptop (`?peers=worker2:4112`, remembered).
+      // Factories this board shows: its own, plus any others tunnelled to the laptop (`?peers=worker2:4112`, remembered;
+      // `?peers=` forgets them).
       // Each card keeps where it came from (`at`), so its buttons go back to that factory.
       const peers = (() => {
         const asked = new URLSearchParams(location.search).get("peers");
@@ -1043,7 +1044,7 @@
         shown = key(c);
         const [body, actions] = detail(c);
         document.getElementById("drawer-body").innerHTML = `
-    <div class="top"><div><div class="sub">#${c.issue}${c.many && c.column !== "Issues" ? ` · on ${esc(c.factory)}` : ""}${c.url ? ` · <a href="${esc(c.url)}" target="_blank">issue on GitHub</a>` : ""}${c.lane?.workItem ? ` · ${esc(c.lane.workItem)}` : ""}</div><h2>${esc(c.title)}</h2></div>
+    <div class="top"><div><div class="sub">${esc(c.issue)}${c.many && c.column !== "Issues" ? ` · on ${esc(c.factory)}` : ""}${c.url ? ` · <a href="${esc(c.url)}" target="_blank">work item</a>` : ""}${c.lane?.workItem ? ` · ${esc(c.lane.workItem)}` : ""}</div><h2>${esc(c.title)}</h2></div>
       <button class="close" onclick="closeCard()">×</button></div>
     ${stepsBar(c)}<div class="content">${body}</div>`;
         document.getElementById("actions").innerHTML =

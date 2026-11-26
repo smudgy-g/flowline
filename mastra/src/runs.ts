@@ -109,7 +109,7 @@ export async function stackState(factory: Factory, runId: string): Promise<Stack
   return snapshot(factory, 'stack', runId) as Promise<StackState | null>
 }
 
-/** Forgets a run: the board stops showing it. Its PR and issue on GitHub are the record. */
+/** Forgets a run: the board stops showing it. The tracker's item and delivered change are the record. */
 export async function forget(factory: Factory, runId: string): Promise<void> {
   const found = await find(factory, runId)
   const store = await factory.getStorage()?.getStore('workflows')
