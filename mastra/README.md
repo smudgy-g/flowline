@@ -22,8 +22,8 @@ Nothing here is paid or hosted: Mastra runs in-process, and run state is a SQLit
 
 The board is where you watch and decide (both factories' cards, with a second one: WORKFLOW.md "A second factory"): a column per stage (Plan, Code, Tests, Review, Your OK, UAT, Draft PR), a card per issue. Amber cards need you, blue ones are running, red ones are stuck. Click a card for what it's doing or what it needs: the plan, the diff, sensitive files, review notes, why it stopped, with Approve, Send back and Retry buttons. It runs in the factory VM inside the `mastra dev` server, so a run carries on by itself after you click.
 
-1. In the VM, once: `cd ~/Projects/colonia/frankenstein && pnpm install` (`vm/bootstrap.sh` does it).
-2. On the laptop: `factory-ui` syncs the VM (`vm/sync.sh`: your Pi login and settings, skills, configs and fonts go over; the VM fetches GitHub and moves the board to this branch's latest when no step is running), starts the server, tunnels it here (not exposed on the network) and opens http://localhost:4111/board. `factory-ui sync` only syncs. The board's sidebar has New issue (the GitHub form) and Sync (the VM half). Pi itself updates on each side on its own. A work item always branches from GitHub's latest `staging` and fetches new packages first. Studio, for looking inside a run, is at http://localhost:4111.
+1. On the worker, once: `pnpm install`, then install and sign in to `sbx` and run `sbx policy init deny-all` (see the root README). The factory itself runs on the worker host; every project command runs in the work item's sandbox.
+2. Start the board with `pnpm --dir mastra run dev` on the worker and reach http://localhost:4111/board over an SSH tunnel from Linux, macOS or Windows. There is no VM sync button: update the factory checkout between steps yourself. A work item always branches from GitHub's latest base branch and installs inside its sandbox. Studio, for looking inside a run, is at http://localhost:4111.
 3. Issues labelled `factory` in the client repo appear in the Issues column; click one to start it.
 4. Once you merge a PR, its card says Merged: **Clean up** removes the worktree, tmux window and local branch, closes the issue and takes the card off. **Abandon** does the same for a task you've given up on (after a confirmation; uncommitted changes are lost).
 
@@ -71,7 +71,7 @@ An issue (or stack) whose form says **Lane: standard** runs the same workflow wi
 - **Reviewers return JSON findings.** If a reply has no parseable block, the run waits for `fx findings`.
 - **Pause and resume.** Pause on a card (or Pause all in the sidebar, `fx pause <issue|all>`) lets the step running finish, then the run waits as `paused`; the coder step also stops between coder calls. A person's answer to a wait still goes through and the run pauses after it. Resume (`fx resume <issue|all>`) carries on from where it stopped, on whatever code is synced by then. Pauses are files in `mastra/.data/paused/`, so they survive a restart.
 - **Errors wait instead of failing.** Any step that throws waits as `error`. Fix the cause, then `fx retry`. UAT infrastructure failures do the same; a client failure goes back to plan with the failure. If UAT stops before writing a report, the card shows the script's error.
-- **One UAT at a time.** UATs share isolated ports, so `scripts/run-uat.sh` holds `.cache/uat.lock`; a second approval waits for the running UAT to finish instead of failing.
+- **UAT runs in its own fresh sandbox,** created deny-all from the start with the pinned inputs and the pushed commit mounted read-only; ports are private to that microVM, so no lock is needed. `sandbox.maxConcurrent` limits how many sandboxes run at once.
 
 ## Limits
 
