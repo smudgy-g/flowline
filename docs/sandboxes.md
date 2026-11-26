@@ -33,4 +33,6 @@ $ python3 -c 'import os,fcntl; fd=os.open("/dev/kvm",os.O_RDWR); print(fcntl.ioc
 KVM_CREATE_VM: OK
 ```
 
-**Install blocked before login.** The initial full apt index refresh did not finish within 180 seconds. Refreshing Docker's signed Noble stable index succeeded. `sudo apt-get install docker-sbx` selected `0.54.1-1~ubuntu.24.04~noble`, but Ubuntu returned `404 Not Found` for dependencies including `mesa-libgallium_25.2.8-0ubuntu0.24.04.4_amd64.deb`. Apt exited 100. Complete a full Ubuntu index refresh before retrying installation. Neither OAuth nor sandbox boot has been tested.
+**First install attempt.** The initial full apt index refresh did not finish within 180 seconds. Refreshing Docker's signed Noble stable index succeeded. `sudo apt-get install docker-sbx` selected `0.54.1-1~ubuntu.24.04~noble`, but Ubuntu returned `404 Not Found` for dependencies including `mesa-libgallium_25.2.8-0ubuntu0.24.04.4_amd64.deb`. Apt exited 100. 
+
+**Install retry succeeded.** `sudo apt-get -o Acquire::ForceIPv4=true -o Acquire::Retries=2 -o APT::Update::Error-Mode=any update` reported `Fetched 33.1 MB in 6s`. `sudo apt-get -qy install docker-sbx` then succeeded; `dpkg-query -W docker-sbx` reported `0.54.1-1~ubuntu.24.04~noble`. `sbx login --help` runs. Operator sign-in, subsequent headless use and sandbox boot are not yet verified.
