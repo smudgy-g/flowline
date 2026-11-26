@@ -3,7 +3,7 @@
 The colonia software factory: a GitHub issue in `ColoniaTech/colonia_client` goes in, a tested, reviewed,
 UAT-checked draft PR to `staging` comes out. It is a local [Mastra](https://mastra.ai) workflow in `mastra/`
 (see `mastra/README.md`), with the black-box UAT in `scripts/run-uat.sh`, `specs/` and `seeds/`. It runs in the
-factory VM (`vm/`); the board at http://localhost:4111/board is where a person watches and decides.
+factory worker, each work item in its own Docker Sandbox; the board at http://localhost:4111/board is where a person watches and decides.
 
 Packages are pnpm (one workspace: the root and `mastra/`; node and pnpm pinned in `mise.toml`). Run
 `pnpm install`, and `pnpm --dir mastra run check` before you commit a change to the lane.
@@ -29,7 +29,7 @@ work already exists outside a factory run, stop and report it rather than rewrit
 
 ## Changing the factory
 
-Change it in a separate checkout or worktree and merge to `main` when no run is mid-step: the VM's board moves to
-`main`'s latest only when no step is running (`vm/sync-in-vm.sh`). UAT inputs (`specs/`, `seeds/`,
+Change it in a separate checkout or worktree and merge to `main` when no run is mid-step; update the worker's
+checkout between steps. UAT inputs (`specs/`, `seeds/`,
 `lighthouse-baseline.json`, `playwright.config.mjs`, `scripts/summarize.mjs`) are human-owned and pinned per
 work item; a task never edits them.

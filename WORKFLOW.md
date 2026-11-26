@@ -10,7 +10,7 @@ The factory adds gates around how you already work: an agreed plan, cold code re
 | `pnpm --dir mastra fx <args>` (on the worker) | The factory CLI: `fx status 1484`, `fx retry 1484 --proceed`. |
 | `scripts/preview.sh <work item>` (on the worker) | Runs the project's preview command inside that item's sandbox. |
 
-Each card shows its sandbox state (running, stopped, missing); an error wait offers **Recreate sandbox**, which rebuilds the VM and reruns setup without touching the worktree. Clean up and Abandon remove the sandbox with the worktree, and orphaned `fx-*` sandboxes are pruned at startup.
+Each card shows its sandbox state (running, stopped, missing); an error wait offers **Recreate sandbox**, which rebuilds the sandbox and reruns setup without touching the worktree. Clean up and Abandon remove the sandbox with the worktree, and orphaned `fx-*` sandboxes are pruned at startup.
 
 ## A task
 
@@ -42,5 +42,5 @@ Migrations still land in `supabase/staging` first, so keep them additive.
 - **Each UAT runs in its own sandbox.** Its ports are private to that microVM, and nothing on the worker is touched.
 - **Known UAT failures are human-owned** (`scripts/summarize.mjs`). When a task makes one pass, the PR says so; remove the entry yourself.
 - **UAT inputs are human-owned and pinned per work item.** `specs/`, `seeds/`, `lighthouse-baseline.json`, `playwright.config.mjs` and `scripts/summarize.mjs` are read from the factory commit recorded when the work item started. Commit spec changes whenever you like; running items keep the inputs they started with. To move an item onto a fixed journey, approve its plan or change with **… on the latest UAT journeys** (the board offers it when the journeys changed since it started), or `fx approve <issue> --baseline <sha>`; a coder stuck at its round limit takes `fx retry <issue> --baseline <sha>`. Only forward along factory history.
-- **The VM's folder stays empty and root-owned.** On Linux devvm can't protect a shared `.git`, so anything the VM wrote into a shared folder could run on the laptop. Never share `~/Projects/colonia` into it, and keep `--ports none`.
+- **A sandbox can write anything in its worktree.** The worker's git calls use the checkout's private registration with hooks and fsmonitor off, and factory records live outside the mount, so a planted `.git` or hook never runs on the host.
 - **Change the factory in a separate worktree** and merge to `main` when no run is mid-step (FEEDBACK 28).
