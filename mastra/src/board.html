@@ -715,7 +715,7 @@
           document.getElementById("notice").innerHTML = [
             ...up
               .filter((r) => r.data.issuesError)
-              .map((r) => `Couldn't list GitHub issues (${esc(r.data.factory)}): ${esc(r.data.issuesError)}`),
+              .map((r) => `Couldn't list work items (${esc(r.data.factory)}): ${esc(r.data.issuesError)}`),
             ...down.map((n) => `Can't reach the ${esc(n)} factory: check its tunnel and project configuration.`),
           ]
             .map((m) => `<div class="notice">${m}</div>`)
@@ -867,7 +867,7 @@
           return [
             c.merged
               ? `<div class="why green"><b>Accepted into {{base}}.</b> Clean up closes the work item and removes the card. The delivered change and its members stay in your tracker.</div>${membersBlock(s)}`
-              : `<div class="why green">Every PR is merged into <code>${esc(s?.branch)}</code>, and the draft PR into {{base}} is open. Review and merge it on GitHub.</div>${membersBlock(s)}`,
+              : `<div class="why green">Every member is merged into <code>${esc(s?.branch)}</code>, and the change into {{base}} is delivered. Review and merge it yourself.</div>${membersBlock(s)}`,
             (c.merged
               ? `<button class="btn primary" onclick="cleanUp(false)">Clean up</button>`
               : "") +
@@ -1075,7 +1075,7 @@
         if (
           abandon &&
           !confirm(
-            "Abandon this task? Its worktree, local branch and any uncommitted changes are deleted, and the card goes. A pushed branch and PR stay on GitHub.",
+            "Abandon this task? Its worktree, local branch and any uncommitted changes are deleted, and the card goes. A pushed branch and anything already delivered stay in your tracker.",
           )
         )
           return;
