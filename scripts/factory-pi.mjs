@@ -131,14 +131,14 @@ export function modelSpec(spec) {
 }
 
 /**
- * When the Codex subscription hits its usage limit, a Codex call moves to Claude on the factory's own API key (billed per
- * token; a dedicated key with a spend limit). FACTORY_FALLBACK_<ROLE> overrides one. The key is a VM-only file the
- * laptop sync never touches; without it there is no fallback and the call fails as before.
+ * When the Codex subscription hits its usage limit, a Codex call moves to the role's Claude fallback, if the worker has
+ * Anthropic auth. FACTORY_FALLBACK_<ROLE> overrides one. `anthropicKeyFile`, when it exists, holds an API key used for
+ * this process only, so Claude calls are billed to the factory's key instead of a stored login.
  */
 const FALLBACK_MODELS = { coder: 'claude-opus-5-5', review: 'claude-opus-5-5', planner: 'claude-opus-5-5', tester: 'claude-haiku-5-5' }
 export const FALLBACKS = Object.fromEntries(Object.keys(FALLBACK_MODELS).map(role =>
   [role, process.env[`FACTORY_FALLBACK_${role.toUpperCase()}`] || FALLBACK_MODELS[role]]))
-const fallbackKeyFile = join(homedir(), '.config/factory/anthropic-api-key')
+const anthropicKeyFile = join(homedir(), '.config/factory/anthropic-api-key')
 
 /** A subscription's usage limit (it resets after hours), as against a transient rate limit Pi retries itself. */
 export const isUsageLimit = (message = '') => /usage.?limit|insufficient_quota|quota exceeded|out of budget/i.test(message)
@@ -188,13 +188,12 @@ async function main() {
     instruction = withSkills(skills, "Follow AGENTS.md's testing rules.\n\n")
   }
   const runtime = await sdk.ModelRuntime.create()
-  const key = existsSync(fallbackKeyFile) ? readFileSync(fallbackKeyFile, 'utf8').trim() : ''
+  const key = existsSync(anthropicKeyFile) ? readFileSync(anthropicKeyFile, 'utf8').trim() : ''
   // A runtime key overrides the stored Anthropic login for this process only, and is never written to auth.json.
   if (key) await runtime.setRuntimeApiKey('anthropic', key)
   const [provider, id] = modelSpec(MODELS[role] ?? MODELS.coder)
-  // Claude is billed to the factory's key, never the stored Anthropic login.
-  if (provider === 'anthropic' && !key) throw new Error(`The ${role} runs on Claude and needs ${fallbackKeyFile}`)
-  const fallback = key && provider === 'openai-codex' ? runtime.getModel('anthropic', FALLBACKS[role] ?? FALLBACKS.coder) : undefined
+  const fallback = provider === 'openai-codex' && runtime.hasConfiguredAuth('anthropic')
+    ? runtime.getModel('anthropic', FALLBACKS[role] ?? FALLBACKS.coder) : undefined
   let model = fallback && codexOut() ? fallback : runtime.getModel(provider, id)
   if (!model || !runtime.hasConfiguredAuth(model.provider)) throw new Error('Pi model/auth unavailable')
   const { session } = await sdk.createAgentSession({
