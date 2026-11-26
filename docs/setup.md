@@ -77,6 +77,12 @@ still missing. It never touches anything outside `.factory/`, and never overwrit
 Your repository needs an `origin` remote: the factory pushes each task branch to it, and acceptance tests the
 **pushed** commit. `origin` may be a bare repository on the same machine — nothing here needs a forge.
 
+**Commit `.factory/` and push it to your base branch.** Every work item is built in a fresh worktree of
+`origin/<base>`, and that worktree is what the sandbox sees. Anything a sandbox runs — the acceptance adapter, a
+toolchain script — must be on the branch, not only in your working copy. `config.json` is the exception, read from
+your checkout, but it belongs in git too so your team reviews gates and sandbox limits like any other code. A run
+refuses to start otherwise, naming the file it cannot find.
+
 ## 4. The sandbox kit
 
 A kit is the image every sandbox for this project starts from. It must carry your project's toolchain and GNU
@@ -217,6 +223,10 @@ Every one of these came up during a real setup.
 | What you see | Why | Fix |
 |---|---|---|
 | `No .factory/config.json here or above` | You are outside a set-up repository | `cd` into it, or `frankenstein setup` |
+| `.factory/… is not on <base>` | A sandbox would not see it: worktrees come from `origin/<base>` | Commit `.factory` and push |
+| `node: error while loading shared libraries: libatomic.so.1` | Node 26 needs a library the `shell` kit lacks | Install Node 24 in `setup`, or use a kit that has it |
+| `corepack: command not found` | Current Node no longer ships corepack | `npm install -g --prefix "$HOME/node" pnpm@<version>` |
+| A tool installs but is `command not found` in a gate | It landed outside `commands.env.PATH` | Install with `--prefix` into a directory that PATH names |
 | `expected tuple, received string` on `commands.check` | A command list given one argv instead of a list of them | `[["npm", "test"]]` |
 | `Not inside a git repository` | `setup` needs a checkout with an `origin` remote | `git init` and add `origin` |
 | `provision failed: Invalid task branch` | The branch name has characters the factory refuses | Check the item id: `[A-Za-z0-9._-]`, no `..` |

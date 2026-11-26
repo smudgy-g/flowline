@@ -295,6 +295,18 @@ async function coderChecked(worktree: string): Promise<boolean> {
   return recorded.trim() === now;
 }
 
+/**
+ * Everything a sandbox runs — the acceptance adapter, any setup script — comes from a fresh worktree of the base
+ * branch, so files that live only in the local checkout would silently not be there. Say so before a run starts.
+ */
+async function onBase(base: string, path: string): Promise<void> {
+  const found = await run(projectRoot, "git", ["ls-tree", "--name-only", `origin/${base}`, "--", path]);
+  if (!found)
+    throw new Error(
+      `${path} is not on origin/${base}. Commit it and push: each work item is built in a fresh worktree of that branch.`,
+    );
+}
+
 async function remoteHead(worktree: string, branch: string): Promise<string> {
   return (
     await run(worktree, "git", ["ls-remote", "--heads", "origin", branch])
@@ -486,13 +498,17 @@ export const realOps: Ops = {
       });
     for (const input of acceptanceInputs)
       if (!paths.some((p) => p === input || p.startsWith(`${input}/`)))
-        throw new Error(`Missing acceptance input at ${commit}: ${input}`);
+        throw new Error(
+          `${input} is not on ${config.base} (at ${commit.slice(0, 8)}). Commit it and push: acceptance runs what ` +
+            `is on the base branch, never what a task branch carries.`,
+        );
     return commit;
   },
 
   async provision(branch, base) {
-    // Always branch from GitHub's tip; the local base checkout is never kept current.
+    // Always branch from the remote tip; the local base checkout is never kept current.
     await run(client, "git", ["fetch", "origin", base]);
+    await onBase(base, ".factory");
     // The tracker's id leads the name, so accept any safe ref: no option-like or traversing names.
     if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,120}$/.test(branch) || branch.includes('..')) throw Error('Invalid task branch');
     const worktree = `${worktrees}${branch}`;

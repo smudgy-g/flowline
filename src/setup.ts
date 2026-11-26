@@ -57,7 +57,9 @@ Next:
   1. Fill in commands.gates in .factory/config.json: the checks a change must pass.
   2. Name a sandbox.kit carrying your toolchain, and list in sandbox.allowlist the hosts its setup may reach.
   3. Write .factory/acceptance/run.sh, the black-box check of a pushed commit (docs/setup.md).
-  4. Describe a work item in .factory/items/<name>.md, then: frankenstein board`);
+  4. Commit .factory and push it to ${base}. Each work item is built in a fresh worktree of origin/${base}, so
+     anything a sandbox runs — the acceptance adapter, any setup script — must be on that branch, not only here.
+  5. Describe a work item in .factory/items/<name>.md, then: frankenstein board`);
 }
 
 function gitRoot() {
