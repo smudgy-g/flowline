@@ -62,7 +62,42 @@ export FACTORY_MODEL_TESTER=anthropic/claude-haiku-5-5
 
 Calls are billed to whatever Pi is signed in to. To bill Claude to a separate API key instead of a stored login,
 put the key in `~/.config/factory/anthropic-api-key`; it is used for that process only and never written to
-`auth.json`.
+`auth.json`. **That file takes precedence over a newly signed-in Anthropic account**: remove or move it first if
+switching accounts. Never paste keys or the contents of `auth.json` into a work item.
+
+### Switching model accounts while a run waits
+
+A provider returning `429 rate_limit_error` means it is refusing requests *now*; signing in again may not reset
+its limit. You can wait for the limit to reset, sign in with another account, or choose another model/provider.
+The run remains at its error gate until you press **Retry**; reauthentication does not approve anything.
+
+```sh
+pi auth check --provider anthropic       # checks credentials, not remaining quota
+pi auth logout anthropic                  # only if you want to switch accounts
+pi auth login anthropic                   # interactive, stored only on the host
+```
+
+For a different provider/model, run `pi --list-models`, sign in via `pi auth login <provider>`, then set the
+relevant role before launching the board, for example `FACTORY_MODEL_PLANNER=provider/model frankenstein board`.
+The planner's default is `anthropic/claude-opus-5-5`; the coder, review and tester each have separate defaults.
+**Restart the board after changing a model environment variable.** Logging into another account for the *same*
+provider is read afresh at the next Pi call; then press **Retry** on the card. Do not edit project files or clear
+run state to switch credentials.
+
+### Git over SSH from the board
+
+A terminal `git push` can ask for an SSH-key passphrase. The board cannot: its git commands fail promptly when
+no unlocked key is available rather than repeatedly prompting. In the terminal from which you start the board:
+
+```sh
+ssh-add ~/.ssh/id_personal      # enter the passphrase once, locally; use your own key path
+ssh-add -l                      # confirms the agent holds it
+frankenstein board              # inherits SSH_AUTH_SOCK from this shell
+```
+
+If `ssh-add` says there is no agent, start one with `eval "$(ssh-agent -s)"` in that shell, then `ssh-add` and
+start the board there. Check `git ls-remote origin HEAD` before starting a run. This access is host-only; no key
+or agent socket is mounted into a sandbox.
 
 ## 3. Set your repository up
 
@@ -244,3 +279,5 @@ Every one of these came up during a real setup.
 | `Acceptance inputs must be on <base>` | The baseline commit is not on the base branch | Push the fix to `base` first |
 | `UAT tested <sha>, expected <sha>` | The adapter reported a commit other than `$COMMIT` | Echo `$COMMIT` in the verdict |
 | `Sandbox: missing` on a card | The sandbox was removed under a running item | **Recreate sandbox** on the card, then **Retry** |
+| `plan failed … 429 rate_limit_error` | The selected provider is throttling the account, not necessarily an expired login | Wait, change accounts with `pi auth login`, or change `FACTORY_MODEL_PLANNER`; then **Retry** |
+| SSH key passphrase prompts, or `Permission denied (publickey)` from a board run | The board process has no unlocked key in its SSH agent | `ssh-add` before `frankenstein board`; test `git ls-remote origin HEAD` in the same shell |

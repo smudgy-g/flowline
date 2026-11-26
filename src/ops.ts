@@ -77,6 +77,8 @@ async function run(
     const { stdout } = await exec(bin, args, {
       cwd,
       env: { ...inherited,
+        // A board has no terminal: do not hang on an encrypted SSH key or an HTTPS credential prompt.
+        ...(bin === 'git' ? { GIT_TERMINAL_PROMPT: '0', GIT_SSH_COMMAND: process.env.GIT_SSH_COMMAND || 'ssh -o BatchMode=yes' } : {}),
         ...(cwd.startsWith(worktrees) && (bin === 'git' || bin === 'bash') ? await taskGitEnv(client,cwd) : {}), ...env },
       maxBuffer: 64 * 1024 * 1024,
     });
