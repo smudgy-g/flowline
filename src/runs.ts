@@ -26,8 +26,7 @@ export function createFactory(ops: Ops, databaseUrl: string, apiRoutes: ApiRoute
       stack: createStack(stackOps, members),
     },
     storage: runs,
-    // Only a board tunnel may call the API from a browser: this factory's (4111) and a second factory's (4112),
-    // whose cards the board merges in. Mastra's default lets any web page call it.
+    // Only local board ports may call the API from a browser; Mastra's default lets any web page call it.
     server: { host: '127.0.0.1', apiRoutes, cors: { origin: BOARD_ORIGINS } },
   })
   self.factory = mastra
@@ -35,7 +34,8 @@ export function createFactory(ops: Ops, databaseUrl: string, apiRoutes: ApiRoute
 }
 export type Factory = ReturnType<typeof createFactory>
 
-export const BOARD_ORIGINS = [4111, 4112].flatMap(port => [`http://localhost:${port}`, `http://127.0.0.1:${port}`])
+export const BOARD_ORIGINS = Array.from({ length: 20 }, (_, i) => 4111 + i)
+  .flatMap(port => [`http://localhost:${port}`, `http://127.0.0.1:${port}`])
 
 /** One run per work item (task or stack), so a second start for the same item is refused. */
 export const runIdFor = (issue: string) => `item-${issue}`

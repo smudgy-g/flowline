@@ -11,7 +11,7 @@ import { realOps, realStackOps } from "./ops.ts";
 import { BOARD_ORIGINS, createFactory, laneState, list } from "./runs.ts";
 import { sandbox } from "./sandbox.ts";
 
-export async function startBoard(port = Number(process.env.PORT) || 4111) {
+export async function startBoard(port = Number(process.env.PORT) || 4111, identity?: string) {
   await mkdir(stateRoot, { recursive: true });
   const factory: ReturnType<typeof createFactory> = createFactory(
     realOps,
@@ -22,11 +22,11 @@ export async function startBoard(port = Number(process.env.PORT) || 4111) {
 
   const app = new Hono();
   app.use("*", cors({ origin: BOARD_ORIGINS }));
+  if (identity) app.get('/board/_identity', c => c.json({ identity, pid: process.pid }));
   // Mastra's ApiRoute union hides `handler` from the type, but a registered route always carries one.
   for (const route of (factory.getServer()?.apiRoutes ?? []) as Array<{ method: string; path: string; handler?: any }>)
     if (route.handler) app.on(route.method, route.path, route.handler);
 
-  await pruneSandboxes(factory);
   // Bound before anything is reported, and a busy port is a sentence, not a stack trace.
   const server = await new Promise<ReturnType<typeof serve>>((resolve, reject) => {
     const s = serve({ fetch: app.fetch, hostname: "127.0.0.1", port }, () => resolve(s));
@@ -35,6 +35,7 @@ export async function startBoard(port = Number(process.env.PORT) || 4111) {
         ? new Error(`Port ${port} is already in use (another board, or an SSH tunnel). Free it, or run with PORT=<other>.`)
         : err));
   });
+  await pruneSandboxes(factory);
   return { factory, server, url: `http://localhost:${port}/board` };
 }
 

@@ -106,7 +106,7 @@ no unlocked key is available rather than repeatedly prompting. In the terminal f
 ```sh
 ssh-add ~/.ssh/id_personal      # enter the passphrase once, locally; use your own key path
 ssh-add -l                      # confirms the agent holds it
-frankenstein board              # inherits SSH_AUTH_SOCK from this shell
+frankenstein board start        # inherits SSH_AUTH_SOCK from this shell
 ```
 
 If `ssh-add` says there is no agent, start one with `eval "$(ssh-agent -s)"` in that shell, then `ssh-add` and
@@ -203,9 +203,18 @@ fast lane
 ## 7. Run it
 
 ```sh
-frankenstein board      # http://localhost:4111/board
+frankenstein board start  # prints the URL, e.g. http://localhost:4111/board
 frankenstein status
 ```
+
+`board start` runs in the background and chooses the first free port from 4111–4130 (or the explicit `PORT` you
+set). In another project, run the same command: it gets a separate board URL, state directory and process.
+`frankenstein board stop` stops **only the background board of your current project**. Run it from that project's
+directory; it verifies the local server's identity before signalling its PID. `frankenstein board` without a
+subcommand remains the foreground, Ctrl-C version, and is not managed by `board stop`. Startup logs are in the
+project's machine-local state directory as `board.log`. The board is bound to loopback and unauthenticated.
+Start it from a shell with your SSH agent set up so Git can use the unlocked key. If an older foreground board is
+already running, stop that one with Ctrl-C before switching to `board start`.
 
 For a remote machine, put it in `~/.ssh/config` once, with the board's tunnel built in:
 
@@ -217,7 +226,8 @@ Host factory-worker
   LocalForward 4111 127.0.0.1:4111
 ```
 
-Then `ssh factory-worker` gives you a shell **and** the tunnel, `ssh -fN factory-worker` the tunnel alone, and
+Start that remote board with `PORT=4111 frankenstein board start` to match this fixed tunnel (or update both
+`LocalForward` ports to the board's printed port). Then `ssh factory-worker` gives you a shell **and** the tunnel, `ssh -fN factory-worker` the tunnel alone, and
 `ssh factory-worker 'cd ~/code/your-project && frankenstein status'` runs one command. The board is
 unauthenticated: keep it on loopback and reach it only through the tunnel.
 
@@ -294,4 +304,4 @@ Every one of these came up during a real setup.
 | `UAT tested <sha>, expected <sha>` | The adapter reported a commit other than `$COMMIT` | Echo `$COMMIT` in the verdict |
 | `Sandbox: missing` on a card | The sandbox was removed under a running item | **Recreate sandbox** on the card, then **Retry** |
 | `plan failed … 429 rate_limit_error` | The selected provider is throttling the account, not necessarily an expired login | Wait, change accounts with `pi auth login`, or `frankenstein model planner provider/model`; then **Retry** |
-| SSH key passphrase prompts, or `Permission denied (publickey)` from a board run | The board process has no unlocked key in its SSH agent | `ssh-add` before `frankenstein board`; test `git ls-remote origin HEAD` in the same shell |
+| SSH key passphrase prompts, or `Permission denied (publickey)` from a board run | The board process has no unlocked key in its SSH agent | `ssh-add` before `frankenstein board start`; test `git ls-remote origin HEAD` in the same shell |

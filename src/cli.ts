@@ -3,7 +3,8 @@
 // until it next waits for someone.
 //
 //   frankenstein setup                        prepare this repository: .factory/config.json and an adapter stub
-//   frankenstein board                        serve the board on http://localhost:4111/board
+//   frankenstein board                        foreground board (Ctrl-C stops it)
+//   frankenstein board start|stop             background board for this repo, with its own port
 //   frankenstein model <role> <provider/model>  switch planner/coder/review/tester, even while the board runs
 //   frankenstein start <item>                 start a run for a work item
 //   frankenstein status [<item>]              list runs, or show what one is waiting for
@@ -51,7 +52,7 @@ async function confirm(v: RunView, issue: string): Promise<true> {
 async function usage() {
   const source = await readFile(new URL(import.meta.url.replace(/\.js$/, '.ts')), 'utf8').catch(() =>
     readFile(new URL(import.meta.url), 'utf8'))
-  console.log(source.split('\n').filter(l => l.startsWith('//')).slice(0, 20).join('\n').replaceAll('// ', '').replace(/^\/\//gm, ''))
+  console.log(source.split('\n').filter(l => l.startsWith('//')).slice(0, 21).join('\n').replaceAll('// ', '').replace(/^\/\//gm, ''))
 }
 
 async function main() {
@@ -69,9 +70,13 @@ async function main() {
     return console.log(`${issueArg} will use ${rest[0]} on its next call. Retry a waiting run from the board; no restart needed.`);
   }
   if (command === 'board') {
-    const { url } = await (await import('./server.ts')).startBoard()
-    const { config, projectRoot } = await import('./config.ts')
-    return console.log(`${config.repo} · ${projectRoot}\n${url}`)
+    if (issueArg === 'start') return (await import('./board-process.ts')).boardStart();
+    if (issueArg === 'stop') return (await import('./board-process.ts')).boardStop();
+    if (issueArg === '_serve') return (await import('./board-process.ts')).boardServe();
+    if (issueArg) throw new Error('Usage: frankenstein board [start|stop]');
+    const { url } = await (await import('./server.ts')).startBoard();
+    const { config, projectRoot } = await import('./config.ts');
+    return console.log(`${config.repo} · ${projectRoot}\n${url}`);
   }
   const { databaseUrl } = await import('./database.ts')
   const { paused, realOps, realStackOps, setPaused, stateRoot } = await import('./ops.ts')

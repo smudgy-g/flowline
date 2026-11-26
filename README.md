@@ -8,7 +8,8 @@ Install it once; run it in any repository you have checked out.
 npm i -g frankenstein-factory
 cd ~/code/your-project
 frankenstein setup        # writes .factory/, and says what your machine is still missing
-frankenstein board        # http://localhost:4111/board
+frankenstein board start  # background; prints this project's board URL (first free port from 4111)
+frankenstein board stop   # stops only this project's background board
 ```
 
 Each work item runs in **its own Docker Sandbox** (`sbx`): a microVM with its own kernel and Docker engine. The factory itself — board, run database, git, credentials and the Pi agents — stays on your machine. Every command that executes project code (install, fixes, checks, tests, preview, acceptance) runs inside the item's sandbox, so agent-written code never runs on your host and one work item cannot touch another.
