@@ -489,7 +489,8 @@ export const realOps: Ops = {
   async provision(branch, base) {
     // Always branch from GitHub's tip; the local base checkout is never kept current.
     await run(client, "git", ["fetch", "origin", base]);
-    if (!/^\d+(?:-[a-z0-9-]+)?$/.test(branch)) throw Error('Invalid task branch');
+    // The tracker's id leads the name, so accept any safe ref: no option-like or traversing names.
+    if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,120}$/.test(branch) || branch.includes('..')) throw Error('Invalid task branch');
     const worktree = `${worktrees}${branch}`;
     if (await exists(worktree)) {
       await checkWorktree(worktree);
