@@ -81,3 +81,14 @@ test('state belongs to one repo and one tracker', async t => {
   await writeFile(file, JSON.stringify({ repo: 'other/repo', tracker: 'node trackers/github.mjs' }));
   await assert.rejects(checkOwner(), /belongs to other\/repo via node trackers\/github\.mjs/);
 });
+
+test('only "all" and item run ids can be paused', async () => {
+  const { setPaused, paused } = await import('../src/ops.ts');
+  const { runIdFor } = await import('../src/runs.ts');
+  const id = runIdFor('basket-discount');
+  await setPaused(id, true);
+  assert.equal(await paused(id), true);
+  await setPaused(id, false);
+  assert.equal(await paused(id), false);
+  await assert.rejects(setPaused('../escape', true), /Can't pause/);
+});

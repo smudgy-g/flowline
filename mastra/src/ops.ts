@@ -95,7 +95,7 @@ async function run(
  */
 const pausedDir = `${factoryRoot}/mastra/.data/paused`;
 const pauseTarget = (target: string) => {
-  if (!/^(all|issue-\d+)$/.test(target))
+  if (!/^(all|item-[A-Za-z0-9._-]{1,64})$/.test(target))
     throw new Error(`Can't pause ${target}`);
   return `${pausedDir}/${target}`;
 };
