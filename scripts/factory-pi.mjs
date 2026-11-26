@@ -77,6 +77,9 @@ function changedPaths(worktree) {
 
 const installRoot = resolve(dirname(new URL(import.meta.url).pathname), '..')
 const stateRoot = process.env.FACTORY_STATE_ROOT ?? join(installRoot, '.cache')
+// Installed, the factory is compiled JavaScript; in its own checkout it is TypeScript Node strips as it loads.
+const factoryModule = name =>
+  pathToFileURL(join(installRoot, existsSync(join(installRoot, 'dist/config.js')) ? `dist/${name}.js` : `src/${name}.ts`)).href
 
 /**
  * The coder's `check`: what the factory's lint and typecheck gates would say, so it fixes them in the same call
@@ -84,8 +87,8 @@ const stateRoot = process.env.FACTORY_STATE_ROOT ?? join(installRoot, '.cache')
  */
 export async function runCheck(worktree, signal) {
   signal?.throwIfAborted()
-  const { projectCommands } = await import('../src/project-commands.ts')
-  const { config } = await import('../src/config.ts')
+  const { projectCommands } = await import(factoryModule('project-commands'))
+  const { config } = await import(factoryModule('config'))
   const files = changedPaths(worktree).filter(f => existsSync(join(worktree, f)))
   const result = await projectCommands(worktree, [...config.commands.autofix, ...config.commands.check], files)
   signal?.throwIfAborted()

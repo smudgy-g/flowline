@@ -373,7 +373,7 @@ export function boardRoutes(factory: () => Factory) {
       requiresAuth: false,
       handler: async (c) =>
         c.html(
-          (await readFile(`${installRoot}/src/board.html`, "utf8"))
+          (await readFile(new URL("./board.html", import.meta.url), "utf8"))
             .replaceAll("{{repo}}", config.repo)
             .replaceAll("{{base}}", config.base),
         ),

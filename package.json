@@ -3,12 +3,27 @@
   "version": "0.1.0",
   "description": "A software factory: a work item goes in, a reviewed, acceptance-tested change comes out.",
   "type": "module",
-  "bin": { "frankenstein": "src/cli.ts" },
-  "engines": { "node": ">=22.18" },
-  "files": ["src", "scripts", "skills", "trackers", "templates", "docs", "README.md", "WORKFLOW.md"],
+  "bin": {
+    "frankenstein": "dist/cli.js"
+  },
+  "engines": {
+    "node": ">=22.18"
+  },
+  "files": [
+    "dist",
+    "scripts",
+    "skills",
+    "trackers",
+    "templates",
+    "docs",
+    "README.md",
+    "WORKFLOW.md"
+  ],
   "scripts": {
+    "build": "tsc -p tsconfig.json && cp src/board.html dist/board.html",
+    "prepack": "npm run build",
     "test": "node --test 'test/*.test.ts' && node --test scripts/*.test.mjs",
-    "check": "tsc -p . && node --test 'test/*.test.ts' && node --test scripts/*.test.mjs"
+    "check": "tsc -p tsconfig.check.json && node --test 'test/*.test.ts' && node --test scripts/*.test.mjs"
   },
   "dependencies": {
     "@hono/node-server": "2.1.11",
