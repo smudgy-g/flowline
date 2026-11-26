@@ -1,0 +1,8 @@
+{
+  "measurement": "production Nuxt build on staging, local isolated Supabase, 2026-10-22",
+  "minimumScores": {
+    "/": { "accessibility": 92, "seo": 100 },
+    "/mieten/lkw": { "accessibility": 92, "seo": 100 },
+    "/mieten/angebot/e0000000-0000-4000-8000-000000000003": { "accessibility": 92, "seo": 100 }
+  }
+}

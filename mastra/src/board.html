@@ -1,0 +1,1198 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧟‍♂️</text></svg>"
+    />
+    <title>Frankenstein</title>
+    <!-- The board (board.ts serves it and its data). Studio, for looking inside a run, is at /. -->
+    <style>
+      :root {
+        --bg: #0e0f11;
+        --col: #131518;
+        --panel: #1a1c20;
+        --line: #26292e;
+        --text: #e6e7e9;
+        --muted: #8b9098;
+        --amber: #f0b429;
+        --amber-bg: #2a2210;
+        --blue: #5b9dff;
+        --blue-bg: #121d2e;
+        --red: #ff6b6b;
+        --red-bg: #2a1414;
+        --green: #3ecf8e;
+        --green-bg: #0f2419;
+        --add: #12301f;
+        --del: #3a1717;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        height: 100%;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font:
+          14px/1.45 system-ui,
+          sans-serif;
+        display: flex;
+        flex-direction: column;
+      }
+      a {
+        color: var(--blue);
+      }
+      header {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 14px 20px;
+        border-bottom: 1px solid var(--line);
+        flex-wrap: wrap;
+      }
+      header h1 {
+        margin: 0;
+        font-size: 17px;
+      }
+      header .right {
+        margin-left: auto;
+        display: flex;
+        gap: 14px;
+        align-items: center;
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .pill {
+        font-size: 12px;
+        font-weight: 600;
+        padding: 3px 10px;
+        border-radius: 999px;
+      }
+      .pill.needs {
+        color: var(--amber);
+        background: var(--amber-bg);
+      }
+      .pill.running {
+        color: var(--blue);
+        background: var(--blue-bg);
+      }
+      .pill.stuck {
+        color: var(--red);
+        background: var(--red-bg);
+      }
+      .pill.done {
+        color: var(--green);
+        background: var(--green-bg);
+      }
+      .notice {
+        padding: 8px 20px;
+        background: var(--red-bg);
+        color: var(--red);
+        font-size: 13px;
+      }
+
+      .main {
+        flex: 1;
+        display: flex;
+        min-height: 0;
+      }
+      .side {
+        width: 210px;
+        flex: none;
+        padding: 14px;
+        border-right: 1px solid var(--line);
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        font-size: 12px;
+        color: var(--muted);
+        overflow-y: auto;
+      }
+      .side .btn {
+        width: 100%;
+        text-align: center;
+        text-decoration: none;
+      }
+      .side pre {
+        margin: 0;
+        white-space: pre-wrap;
+        font-size: 11px;
+        max-height: 40vh;
+        overflow-y: auto;
+      }
+      .board {
+        flex: 1;
+        min-width: 0;
+        display: grid;
+        grid-template-columns: repeat(9, minmax(180px, 1fr));
+        gap: 10px;
+        padding: 14px 16px;
+        overflow-x: auto;
+        min-height: 0;
+      }
+      .column {
+        background: var(--col);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+      }
+      .column h2 {
+        margin: 0;
+        padding: 10px 12px;
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--muted);
+        display: flex;
+        justify-content: space-between;
+        border-bottom: 1px solid var(--line);
+      }
+      .column.you h2 {
+        color: var(--amber);
+      }
+      .cards {
+        padding: 8px;
+        display: grid;
+        gap: 8px;
+        align-content: start;
+        overflow-y: auto;
+      }
+      .card {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-left: 3px solid var(--line);
+        border-radius: 8px;
+        padding: 10px 11px;
+        cursor: pointer;
+        text-align: left;
+        font: inherit;
+        color: inherit;
+        width: 100%;
+      }
+      .card:hover {
+        border-color: #3a3e45;
+      }
+      .card.needs {
+        border-left-color: var(--amber);
+      }
+      .card.running {
+        border-left-color: var(--blue);
+      }
+      .card.stuck {
+        border-left-color: var(--red);
+      }
+      .card.done {
+        border-left-color: var(--green);
+      }
+      .card.paused {
+        border-left-color: var(--muted);
+      }
+      .card .num {
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .card .title {
+        font-weight: 600;
+        margin: 2px 0 8px;
+        overflow-wrap: anywhere;
+      }
+      .card .status {
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--muted);
+      }
+      .card.needs .status {
+        color: var(--amber);
+      }
+      .card.running .status {
+        color: var(--blue);
+      }
+      .card.stuck .status {
+        color: var(--red);
+      }
+      .card.done .status {
+        color: var(--green);
+      }
+      .card .meta {
+        font-size: 12px;
+        color: var(--muted);
+        margin-top: 2px;
+      }
+      .card.running .status::before {
+        content: "";
+        display: inline-block;
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: var(--blue);
+        margin-right: 6px;
+        animation: pulse 1.4s infinite;
+      }
+      @keyframes pulse {
+        50% {
+          opacity: 0.25;
+        }
+      }
+      .empty {
+        color: #4a4e55;
+        font-size: 12px;
+        text-align: center;
+        padding: 10px 0;
+      }
+
+      .scrim {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.5);
+        display: none;
+      }
+      .drawer {
+        position: fixed;
+        top: 0;
+        right: 0;
+        bottom: 0;
+        width: min(820px, 100vw);
+        background: var(--col);
+        border-left: 1px solid var(--line);
+        overflow-y: auto;
+        transform: translateX(100%);
+        transition: transform 0.2s;
+        display: flex;
+        flex-direction: column;
+      }
+      .open .scrim {
+        display: block;
+      }
+      .open .drawer {
+        transform: none;
+      }
+      .top {
+        display: flex;
+        gap: 12px;
+        align-items: flex-start;
+        padding: 18px 22px;
+        border-bottom: 1px solid var(--line);
+      }
+      .top h2 {
+        margin: 0;
+        font-size: 17px;
+      }
+      .top .sub {
+        color: var(--muted);
+        font-size: 13px;
+      }
+      .close {
+        margin-left: auto;
+        background: none;
+        border: 0;
+        color: var(--muted);
+        font-size: 22px;
+        cursor: pointer;
+        line-height: 1;
+      }
+      .steps {
+        display: flex;
+        gap: 4px;
+        flex-wrap: wrap;
+        padding: 12px 22px 0;
+      }
+      .steps span {
+        font-size: 12px;
+        padding: 2px 8px;
+        border-radius: 4px;
+        background: #1d2024;
+        color: var(--muted);
+      }
+      .steps .ok {
+        color: var(--green);
+      }
+      .steps .now {
+        color: var(--bg);
+        background: var(--blue);
+        font-weight: 600;
+      }
+      .steps .you {
+        color: var(--bg);
+        background: var(--amber);
+        font-weight: 600;
+      }
+      .steps .bad {
+        color: var(--bg);
+        background: var(--red);
+        font-weight: 600;
+      }
+      .content {
+        padding: 16px 22px 20px;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        gap: 14px;
+        flex: 1;
+        align-content: start;
+      }
+      .ask {
+        font-size: 15px;
+      }
+      .ask b {
+        color: var(--amber);
+      }
+      .why {
+        background: #1b1d21;
+        border-left: 3px solid var(--amber);
+        padding: 10px 14px;
+        border-radius: 4px;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+      }
+      .why.red {
+        border-color: var(--red);
+      }
+      .why.blue {
+        border-color: var(--blue);
+      }
+      .why.green {
+        border-color: var(--green);
+      }
+      h3 {
+        margin: 4px 0 0;
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--muted);
+      }
+      p {
+        margin: 0;
+        white-space: pre-wrap;
+      }
+      .muted {
+        color: var(--muted);
+      }
+      ul.files {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        font:
+          13px ui-monospace,
+          monospace;
+      }
+      ul.files li {
+        padding: 3px 0;
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+      .tag {
+        font: 11px system-ui;
+        padding: 1px 6px;
+        border-radius: 4px;
+        background: var(--amber-bg);
+        color: var(--amber);
+      }
+      .tag.test {
+        background: #1d2024;
+        color: var(--muted);
+      }
+      .plus {
+        color: var(--green);
+      }
+      .minus {
+        color: var(--red);
+      }
+      details {
+        border: 1px solid var(--line);
+        border-radius: 6px;
+      }
+      summary {
+        cursor: pointer;
+        padding: 8px 12px;
+        font:
+          13px ui-monospace,
+          monospace;
+        color: var(--muted);
+        overflow-wrap: anywhere;
+      }
+      pre.diff {
+        margin: 0;
+        padding: 8px 0;
+        font:
+          12.5px/1.55 ui-monospace,
+          monospace;
+        overflow-x: auto;
+        border-top: 1px solid var(--line);
+      }
+      pre.diff div {
+        padding: 0 12px;
+        white-space: pre;
+        min-height: 1.55em;
+      }
+      pre.diff .a {
+        background: var(--add);
+      }
+      pre.diff .d {
+        background: var(--del);
+      }
+      pre.diff .h {
+        color: var(--blue);
+      }
+      .checks {
+        display: flex;
+        gap: 16px;
+        flex-wrap: wrap;
+      }
+      .checks span::before {
+        content: "✓ ";
+        color: var(--green);
+      }
+      .actions {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        flex-wrap: wrap;
+        position: sticky;
+        bottom: 0;
+        background: var(--col);
+        padding: 12px 22px;
+        border-top: 1px solid var(--line);
+      }
+      .actions:empty {
+        display: none;
+      }
+      ol.members {
+        margin: 0;
+        padding-left: 20px;
+      }
+      ol.members li.done {
+        color: var(--muted);
+      }
+      ol.members li.now {
+        font-weight: 600;
+      }
+      pre.design {
+        margin: 0;
+        white-space: pre-wrap;
+        font:
+          13px/1.5 ui-monospace,
+          monospace;
+        background: #1b1d21;
+        padding: 10px 14px;
+        border-radius: 4px;
+        max-height: 50vh;
+        overflow-y: auto;
+      }
+      .actions .error {
+        color: var(--red);
+        width: 100%;
+        font-size: 13px;
+      }
+      .btn {
+        font: inherit;
+        font-weight: 600;
+        border-radius: 6px;
+        padding: 8px 16px;
+        cursor: pointer;
+        border: 1px solid var(--line);
+        background: #1f2226;
+        color: var(--text);
+      }
+      button.primary {
+        background: var(--green);
+        color: #06140d;
+        border-color: var(--green);
+      }
+      button:disabled {
+        opacity: 0.5;
+        cursor: default;
+      }
+      input,
+      textarea {
+        font: inherit;
+        padding: 8px 10px;
+        border-radius: 6px;
+        border: 1px solid var(--line);
+        background: #0f1012;
+        color: var(--text);
+      }
+      .actions textarea {
+        order: -1;
+        flex: 1 1 100%;
+        min-height: 72px;
+      }
+      textarea {
+        width: 100%;
+        min-height: 90px;
+        resize: vertical;
+      }
+      code {
+        font:
+          12px ui-monospace,
+          monospace;
+        background: #1d2024;
+        padding: 1px 5px;
+        border-radius: 4px;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Frankenstein</h1>
+      <span id="factories" class="muted"></span>
+      <span id="counts"></span>
+      <span class="right"><span id="updated"></span></span>
+    </header>
+    <div id="notice"></div>
+    <div class="main">
+      <nav class="side">
+        <a
+          class="btn primary"
+          href="https://github.com/ColoniaTech/colonia_client/issues/new?template=factory.yml"
+          target="_blank"
+          >New issue</a
+        >
+        <span
+          >Opens the factory form on GitHub; it shows up under Issues within a
+          minute.</span
+        >
+        <a
+          class="btn"
+          href="https://github.com/ColoniaTech/colonia_client/issues/new?template=factory-stack.yml"
+          target="_blank"
+          >New stack</a
+        >
+        <span
+          >A bigger feature as several PRs: describe it once and list the PRs in
+          order.</span
+        >
+        <button class="btn" id="pause-all" onclick="pauseAll()">Pause all</button>
+        <span id="pause-info">Runs finish the step they're on, then wait. Good before a sync.</span>
+        <button class="btn" id="sync-btn" onclick="sync()">Sync</button>
+        <span id="sync-info"></span>
+        <pre id="sync-log"></pre>
+        <a href="/workflows/fastLane" style="margin-top: auto">Studio</a>
+      </nav>
+      <div class="board" id="board"></div>
+    </div>
+    <div id="overlay">
+      <div class="scrim" onclick="closeCard()"></div>
+      <aside class="drawer">
+        <div id="drawer-body"></div>
+        <div class="actions" id="actions"></div>
+      </aside>
+    </div>
+
+    <script>
+      const STAGES = [
+        "Plan",
+        "Code",
+        "Tests",
+        "Review",
+        "Your OK",
+        "UAT",
+        "Draft PR",
+      ];
+      const esc = (s) =>
+        String(s ?? "").replace(
+          /[&<>"']/g,
+          (c) =>
+            ({
+              "&": "&amp;",
+              "<": "&lt;",
+              ">": "&gt;",
+              '"': "&quot;",
+              "'": "&#39;",
+            })[c],
+        );
+      const ago = (t) => {
+        if (!t) return "";
+        const m = Math.floor((Date.now() - t) / 60000);
+        return m < 1
+          ? "just now"
+          : m < 60
+            ? `${m} min`
+            : m < 1440
+              ? `${Math.floor(m / 60)} h ${m % 60} min`
+              : `${Math.floor(m / 1440)} d`;
+      };
+      /** A step running longer than this is probably stuck (a full test suite takes about 15 min, UAT about 20). */
+      const OVERDUE_MIN = 45;
+      const overdue = (c) =>
+        c.kind === "running" &&
+        c.since &&
+        Date.now() - c.since > OVERDUE_MIN * 60000;
+      const isTest = (f) =>
+        /(?:^|\/)[^/]+\.(?:spec|test)\.[cm]?[jt]sx?$/.test(f);
+      // Factories this board shows: its own, plus any others tunnelled to the laptop (`?peers=monster:4112`, remembered).
+      // Each card keeps where it came from (`at`), so its buttons go back to that factory.
+      const peers = (() => {
+        const asked = new URLSearchParams(location.search).get("peers");
+        try {
+          if (asked !== null) localStorage.setItem("peers", asked);
+          return asked ?? localStorage.getItem("peers") ?? "";
+        } catch {
+          return asked ?? "";
+        }
+      })();
+      const factories = [
+        { at: "" },
+        ...peers
+          .split(",")
+          .map((p) => /^([a-z0-9-]+):(\d+)$/.exec(p.trim()))
+          .filter(Boolean)
+          .map(([, name, port]) => ({ at: `http://localhost:${port}`, name })),
+      ];
+      let cards = [],
+        openId = null,
+        allPaused = false,
+        shown = "";
+
+      async function refresh() {
+        try {
+          const results = await Promise.all(
+            factories.map((f) =>
+              fetch(`${f.at}/board/data`)
+                .then((r) => r.json())
+                .then((data) => ({ f, data }))
+                .catch(() => ({ f, data: null })),
+            ),
+          );
+          const up = results.filter((r) => r.data);
+          if (!up.length) throw new Error("no factory answered");
+          const many = factories.length > 1;
+          const runs = [],
+            issues = new Map();
+          for (const { f, data } of up)
+            for (const c of data.cards) {
+              Object.assign(c, {
+                at: f.at,
+                factory: data.factory,
+                id: `${f.at}|${c.issue}`,
+                many,
+              });
+              if (c.column !== "Issues") runs.push(c);
+              else {
+                const seen = issues.get(c.issue) ?? { ...c, startAt: [] };
+                seen.startAt.push({ at: f.at, factory: data.factory });
+                issues.set(c.issue, seen);
+              }
+            }
+          // An issue any factory has a card for isn't one to start.
+          cards = [
+            ...[...issues.values()].filter((i) => !runs.some((c) => c.issue === i.issue)),
+            ...runs,
+          ];
+          const data = up[0].data;
+          allPaused = up.every((r) => r.data.allPaused);
+          document.getElementById("pause-all").textContent = allPaused
+            ? "Resume all"
+            : "Pause all";
+          document.getElementById("pause-info").textContent = allPaused
+            ? "Everything is paused: runs stop before their next step."
+            : "Runs finish the step they're on, then wait. Good before a sync.";
+          // Which factories are behind the board (the doctor on this laptop, the monster on the M1); one that
+          // doesn't answer is struck through.
+          document.getElementById("factories").innerHTML = results
+            .map((r) =>
+              r.data
+                ? `the ${esc(r.data.factory)}`
+                : `<s title="not answering">the ${esc(r.f.name ?? "factory")}</s>`,
+            )
+            .join(" · ");
+          const down = results.filter((r) => !r.data).map((r) => r.f.name ?? "this factory");
+          document.getElementById("notice").innerHTML = [
+            ...up
+              .filter((r) => r.data.issuesError)
+              .map((r) => `Couldn't list GitHub issues (${esc(r.data.factory)}): ${esc(r.data.issuesError)}`),
+            ...down.map((n) => `Can't reach the ${esc(n)} factory: is its tunnel open?`),
+          ]
+            .map((m) => `<div class="notice">${m}</div>`)
+            .join("");
+          render(data.columns);
+          document.getElementById("updated").textContent =
+            `Updated ${new Date().toLocaleTimeString()}`;
+          if (openId) {
+            const c = cards.find((c) => c.id === openId);
+            if (c && key(c) !== shown) openCard(openId);
+          }
+        } catch (e) {
+          document.getElementById("updated").textContent =
+            `Can't reach the factory: ${e.message}`;
+        }
+      }
+      const key = (c) => `${c.kind}|${c.status}|${c.token ?? ""}`;
+
+      function render(columns) {
+        const count = (k) => cards.filter((c) => c.kind === k).length;
+        const label = {
+          needs: "need you",
+          running: "running",
+          stuck: "stuck",
+          paused: "paused",
+          done: "ready to merge",
+        };
+        document.getElementById("counts").innerHTML = Object.keys(label)
+          .filter(count)
+          .map((k) => `<span class="pill ${k}">${count(k)} ${label[k]}</span>`)
+          .join(" ");
+        document.getElementById("board").innerHTML = columns
+          .map((col) => {
+            const inCol = cards.filter((c) => c.column === col);
+            return `<section class="column ${col === "Your OK" ? "you" : ""}"><h2><span>${col}</span><span>${inCol.length || ""}</span></h2>
+      <div class="cards">${
+        inCol
+          .map(
+            (c) => `
+        <button class="card ${c.kind}" onclick="openCard('${esc(c.id)}')">
+          <div class="num">#${c.issue}${c.stack ? " · stack" : ""}${c.standard ? " · standard" : ""}${c.many && c.column !== "Issues" ? ` · ${esc(c.factory)}` : ""}</div><div class="title">${esc(c.title)}</div>
+          <div class="status">${c.kind === "needs" ? "Needs you: " : ""}${esc(c.status)}</div>
+          <div class="meta">${c.kind === "running" || c.kind === "needs" || c.kind === "stuck" ? esc(ago(c.since)) : ""}</div>
+        </button>`,
+          )
+          .join("") || '<div class="empty">—</div>'
+      }</div></section>`;
+          })
+          .join("");
+      }
+
+      function stepsBar(c) {
+        if (c.column === "Issues" || c.column === "Stacks") return "";
+        const at = STAGES.indexOf(c.column);
+        const cls = (n) =>
+          n < at || c.kind === "done"
+            ? "ok"
+            : n > at
+              ? ""
+              : { needs: "you", running: "now", stuck: "bad" }[c.kind];
+        return `<div class="steps">${STAGES.map((s, n) => `<span class="${cls(n)}">${s}${cls(n) === "ok" ? " ✓" : ""}</span>`).join("")}</div>`;
+      }
+
+      // The standard lane's reviewer findings at a plan or design gate: what is still open after its automatic revisions.
+      function reviewBlock(w) {
+        if (!w.findings) return "";
+        const skipped = w.unreviewed?.length
+          ? `<p class="muted">No readable findings from ${esc(w.unreviewed.join(", "))}; skipped.</p>`
+          : "";
+        return `<h3>Reviewers: ${w.findings.length ? `${w.findings.length} still open (approve anyway, or send it back)` : "nothing open"}</h3>${w.findings.length ? `<ul>${w.findings.map((f) => `<li><b>${esc(f.severity)}</b> ${esc(f.description)}${f.file && f.file !== "issue" ? ` <code>${esc(f.file)}:${f.line}</code>` : ""}</li>`).join("")}</ul>` : ""}${skipped}`;
+      }
+      function planBlock(plan) {
+        return plan
+          ? `<h3>What changes</h3><p>${esc(plan.summary)}</p><h3>How it's tested</h3><p>${esc(plan.tests)}</p>`
+          : "";
+      }
+      // The work item's written history (.agents/artefacts/factory/history.md in its worktree), newest first.
+      function historyBlock(c) {
+        const text = c.lane?.history;
+
+        if (!text) return "";
+
+        const entries = text
+          .split(/^(?=## )/m)
+          .filter((entry) => entry.trim())
+          .reverse();
+
+        return `<details open><summary>History: ${entries.length} entries, newest first</summary><div style="padding:0 12px 12px;max-height:420px;overflow:auto;white-space:pre-wrap;font-size:12px">${entries.map((entry) => esc(entry.trim())).join("\n\n")}</div></details>`;
+      }
+      function stepsBlock(c) {
+        const steps = c.lane?.steps,
+          done = c.lane?.stepsDone ?? 0;
+        return steps?.length
+          ? `<details><summary>Coder steps: ${Math.min(done, steps.length)} of ${steps.length} given</summary><div style="padding:0 12px 12px">${steps.map((t, i) => `<p>${i < done ? "✓" : "·"} ${esc(t)}</p>`).join("")}</div></details>`
+          : "";
+      }
+      function coderBlock(c) {
+        return c.lane?.coderReply
+          ? `<details><summary>What the coder said last</summary><div style="padding:0 12px 12px"><p>${esc(c.lane.coderReply)}</p></div></details>`
+          : "";
+      }
+      function issueBlock(c) {
+        return c.lane?.issueBody
+          ? `<details><summary>The issue</summary><div style="padding:0 12px 12px"><p>${esc(c.lane.issueBody)}</p></div></details>`
+          : "";
+      }
+
+      function membersBlock(s) {
+        if (!s?.members?.length) return "";
+        return `<h3>PRs in order · on <code>${esc(s.branch)}</code></h3><ol class="members">${s.members.map((m, i) => `<li class="${i < s.current ? "done" : i === s.current ? "now" : ""}">${esc(m.title)}${m.byHand ? ' <span class="tag test">by hand</span>' : ""}${m.number ? ` <a href="https://github.com/ColoniaTech/colonia_client/issues/${m.number}" target="_blank">#${m.number}</a>` : ""}${i < s.current ? " ✓" : ""}</li>`).join("")}</ol>`;
+      }
+      function stackDetail(c) {
+        const w = c.waiting ?? {},
+          s = c.stack;
+        const designBlock = s?.design
+          ? `<details><summary>The approved design</summary><pre class="design">${esc(s.design)}</pre></details>`
+          : "";
+        const issue = s?.issueBody
+          ? `<details><summary>The issue</summary><div style="padding:0 12px 12px"><p>${esc(s.issueBody)}</p></div></details>`
+          : "";
+        if (w.kind === "design")
+          return [
+            `<div class="ask"><b>Agree the stack's technical design.</b> One design for every PR: the data model, shared shapes, and what each PR reuses. Every PR's plan must follow it, and it goes into each sub-issue. Write it with the driver, or here.</div>
+     ${w.message?.includes("\n") ? `<div class="why">${esc(w.message.split("\n").slice(1).join("\n"))}</div>` : ""}
+     <textarea id="design" style="min-height:320px;font:13px/1.5 ui-monospace,monospace">${esc(w.draft ?? "")}</textarea>${membersBlock(s)}${issue}`,
+            `<button class="btn primary" onclick="act('design')">Save design</button><span class="muted">You'll approve it next. Approving creates the sub-issues.</span>`,
+          ];
+        if (w.kind === "design-approval") {
+          const proposed = w.proposed ?? [];
+          return [
+            `<div class="ask">Every PR in this stack follows this design. <b>Approve it</b>, or say what to change. Approving creates the stack branch and one sub-issue per PR.</div>
+     <pre class="design">${esc(w.design)}</pre>${reviewBlock(w)}${membersBlock(s)}${proposed.length ? `<h3>The reviewers' proposed PR list</h3><ol class="members">${proposed.map((m) => `<li>${esc(m.title)}${m.byHand ? ' <span class="tag test">by hand</span>' : ""}</li>`).join("")}</ol>` : ""}${issue}`,
+            (proposed.length
+              ? `<button class="btn primary" onclick="act('approve-proposed')">Approve with the proposed list</button>`
+              : "") + decision(proposed.length ? "Approve with the current list" : "Approve design", "…or say what to change"),
+          ];
+        }
+        if (w.kind === "by-hand")
+          return [
+            `<div class="ask"><b>Do this step by hand</b>, then click Done. The factory doesn't do it (migrations, for example).</div><div class="why">${esc(w.message)}</div>${membersBlock(s)}${designBlock}`,
+            `<button class="btn primary" onclick="act('approve')">Done</button>`,
+          ];
+        if (w.kind === "member-running")
+          return [
+            `<div class="why blue">${esc(w.message)}</div>${membersBlock(s)}${designBlock}`,
+            `<button class="btn" onclick="act('retry')">Check again</button><span class="muted">Clean up does this for you.</span>`,
+          ];
+        if (c.kind === "done")
+          return [
+            c.merged
+              ? `<div class="why green"><b>Merged into staging.</b> Clean up closes the issue and removes the card. The PR and sub-issues stay on GitHub.</div>${membersBlock(s)}`
+              : `<div class="why green">Every PR is merged into <code>${esc(s?.branch)}</code>, and the draft PR into staging is open. Review and merge it on GitHub.</div>${membersBlock(s)}`,
+            (c.merged
+              ? `<button class="btn primary" onclick="cleanUp(false)">Clean up</button>`
+              : "") +
+              (c.prUrl
+                ? `<a class="btn${c.merged ? "" : " primary"}" style="text-decoration:none;padding:8px 16px;border-radius:6px" href="${esc(c.prUrl)}" target="_blank">Open the PR</a>`
+                : ""),
+          ];
+        if (c.kind === "running")
+          return [
+            `<div class="why blue">${esc(c.status)}</div>${membersBlock(s)}`,
+            "",
+          ];
+        return null; // stuck: the generic stuck view below
+      }
+
+      function detail(c) {
+        const w = c.waiting ?? {};
+        if (c.column === "Issues" && c.stack)
+          return [
+            `<div class="ask">A stack, not started. Starting reads its PR list; then you agree one technical design for the whole stack. Approving the design creates the sub-issues, and the PRs run one after another.</div>`,
+            startButtons(c, "Start stack"),
+          ];
+        if (c.column === "Stacks") {
+          const d = stackDetail(c);
+          if (d) return d;
+        }
+        if (c.column === "Issues")
+          return [
+            `<div class="ask">Not started. Starting reads the issue and sets up a run; then you agree a plan.</div>`,
+            startButtons(c, "Start"),
+          ];
+        if (c.kind === "running")
+          return [
+            `${overdue(c) ? `<div class="why red"><b>This is taking much longer than usual.</b> If the laptop slept, the VM paused with it and this will carry on by itself; otherwise the output below shows where it's stuck. Tests are stopped after 40 min.</div>` : ""}
+     <div class="why blue">${esc(c.status)} for ${esc(ago(c.since))}. Nothing for you to do yet; the card moves when it's done.${c.lane?.cycles ? `\nBuild round ${c.lane.cycles}.` : ""}</div>
+     ${c.column === "Tests" ? `<h3>Live output</h3><pre class="diff" id="log" style="max-height:340px;overflow-y:auto;border:1px solid var(--line);border-radius:6px"></pre>` : ""}
+     ${historyBlock(c)}${stepsBlock(c)}${coderBlock(c)}${planBlock(c.lane?.plan)}${issueBlock(c)}`,
+            "",
+          ];
+        if (c.kind === "done")
+          return [
+            c.merged
+              ? `<div class="why green"><b>Merged.</b> Clean up removes the worktree, its tmux window and the local branch, and closes the issue with a link to the PR. The PR stays on GitHub.</div>${planBlock(c.lane?.plan)}`
+              : `<div class="why green">UAT passed and the draft PR is open. Review and merge it on GitHub; the factory never merges. Once it's merged, you can clean up here.</div>${planBlock(c.lane?.plan)}`,
+            (c.merged
+              ? `<button class="btn primary" onclick="cleanUp(false)">Clean up</button>`
+              : "") +
+              (c.prUrl
+                ? `<a class="btn${c.merged ? "" : " primary"}" style="text-decoration:none;padding:8px 16px;border-radius:6px" href="${esc(c.prUrl)}" target="_blank">Open the PR</a>`
+                : "") +
+              (c.merged ? "" : abandonButton),
+          ];
+
+        if (w.kind === "plan")
+          return [
+            `<div class="ask"><b>Agree a plan.</b> The planner couldn't write one. Write it here (what changes, and how it's tested), or ask the driver.</div>
+     ${w.message?.includes("\n") ? `<div class="why">${esc(w.message.split("\n").slice(1).join("\n"))}</div>` : ""}
+     <h3>What changes</h3><textarea id="summary">${esc(c.lane?.plan?.summary)}</textarea>
+     <h3>How it's tested</h3><textarea id="tests">${esc(c.lane?.plan?.tests)}</textarea>${issueBlock(c)}`,
+            `<button class="btn primary" onclick="act('plan')">Save plan</button><span class="muted">You'll approve it next.</span>`,
+          ];
+        if (w.kind === "plan-approval") {
+          const proposed = w.proposedPrs ?? [];
+          return [
+            `<div class="ask">This is what the coder will be told to do. <b>Approve it</b>, or send it back with what to change; the planner revises it.</div>${w.scope ? `<div class="why">This PR is one part of a split: <b>${esc(w.scope)}</b></div>` : ""}${w.questions?.length ? `<h3>Open questions (the plan uses the defaults given)</h3>${w.questions.map((q) => `<p>• ${esc(q)}</p>`).join("")}` : ""}${reviewBlock(w)}${planBlock(w.plan)}
+     <details${proposed.length ? " open" : ""}><summary>${proposed.length ? "The reviewers propose splitting this into PRs" : "Split this into PRs"}</summary><div style="padding:0 12px 12px"><p class="muted">One PR per line, in order. This card keeps the first and replans for it; ${/^stack\//.test(c.lane?.base ?? "") ? "the rest become sub-issues right after it when it finishes." : "the rest become new factory issues."}</p><textarea id="parts" rows="4">${esc(proposed.map((p, i) => `${i + 1}. ${p}`).join("\n"))}</textarea><button class="btn" onclick="act('split')">Split into PRs</button></div></details>${issueBlock(c)}`,
+            decision("Approve plan", "…or say what to change", c),
+          ];
+        }
+        if (w.kind === "outcome-approval") {
+          const files = w.files ?? [],
+            sensitive = w.sensitive ?? [],
+            notes = w.lowNotes ?? [];
+          return [
+            `<div class="ask">The change is built, tested and reviewed. <b>Read the diff and approve it</b>, or send it back with what's wrong. Approving pushes the branch and runs UAT.</div>
+       <div class="checks"><span>Lint</span><span>Type check</span><span>Changed tests</span><span>Full test suite</span><span>Review: ${notes.length ? `${notes.length} note${notes.length > 1 ? "s" : ""}` : "no findings"}</span></div>
+       ${sensitive.length ? `<div class="why"><b>${sensitive.length} sensitive file${sensitive.length > 1 ? "s" : ""}</b> (dependencies, customer data, integrations or server services). Read ${sensitive.length > 1 ? "these" : "this one"} closely.</div>` : ""}
+       ${notes.length ? `<h3>Review notes (medium and low, not blocking: send it back if one matters)</h3><ul>${notes.map((n) => `<li>${esc(n)}</li>`).join("")}</ul>` : ""}
+       <h3>Changed files · build round ${c.lane?.cycles ?? "?"}</h3>
+       <ul class="files">${files.map((f) => `<li id="stat-${esc(f)}"><span>${esc(f)}</span>${sensitive.includes(f) ? '<span class="tag">sensitive</span>' : isTest(f) ? '<span class="tag test">test</span>' : ""}</li>`).join("")}</ul>
+       <div id="diff" class="muted">Loading the diff…</div>
+       ${historyBlock(c)}${stepsBlock(c)}${coderBlock(c)}${planBlock(c.lane?.plan)}
+       <p class="muted">Or open it in your editor: <code>wx open ${esc(c.lane?.workItem)}</code></p>`,
+            decision("Approve change", "…or say what's wrong", c),
+          ];
+        }
+        if (w.kind === "paused")
+          return [
+            `<div class="ask">${esc(w.message)}</div>${historyBlock(c)}${stepsBlock(c)}${coderBlock(c)}${planBlock(c.lane?.plan)}`,
+            "",
+          ];
+        // Everything else is stuck.
+        const retry = [
+          "error",
+          "changed",
+          "cycle-limit",
+          "no-change",
+          "findings",
+        ].includes(w.kind);
+        const setup =
+          w.step === "uat" && /never reached a verdict/.test(w.message ?? "");
+        return [
+          `${setup ? `<div class="why red"><b>Setup problem, not your change.</b> UAT didn't get as far as testing anything, so nothing was sent back to the coder.</div>` : ""}
+     <div class="why red">${esc(w.message ?? c.error ?? c.status)}</div>
+     ${w.kind === "findings" && w.reply ? `<details open><summary>What the reviewer wrote</summary><div style="padding:0 12px 12px;white-space:pre-wrap">${esc(w.reply)}</div></details>` : ""}
+     ${retry ? `<p class="muted">Fix the cause (or ask the driver to), then retry.</p>` : ""}
+     ${!w.kind ? `<p class="muted">The run stopped unexpectedly. Ask the driver to look at it.</p>` : ""}${historyBlock(c)}${stepsBlock(c)}${coderBlock(c)}${planBlock(c.lane?.plan)}`,
+          retry
+            ? `<button class="btn primary" onclick="act('retry')">Retry</button>${w.kind === "no-change" ? `<button class="btn" onclick="act('proceed')">Proceed to the checks as it is</button>` : ""}${w.kind === "changed" ? `<textarea id="why" rows="3" placeholder="…or say why and send it back to the coder"></textarea><button class="btn" onclick="act('reject')">Send back</button>` : w.kind === "cycle-limit" || w.kind === "no-change" ? `<textarea id="why" rows="3" placeholder="Optional: a decision for the coder and reviewer (it overrides the plan)"></textarea>` : ""}`
+            : "",
+        ];
+      }
+      // One button per factory that lists the issue; the first is the default.
+      const startButtons = (c, label) =>
+        c.startAt
+          .map(
+            (s, i) =>
+              `<button class="btn${i ? "" : " primary"}" onclick="startNumber('${esc(s.at)}', ${c.issue})">${label}${c.many ? ` on ${esc(s.factory)}` : ""}</button>`,
+          )
+          .join("");
+      // A run keeps the UAT journeys it started with; when the factory's changed since, approving can move it onto them.
+      const decision = (yes, placeholder, c) =>
+        `<button class="btn primary" onclick="act('approve')">${yes}</button>${c?.newerUat ? `<button class="btn" onclick="act('approve-latest-uat')" title="Forward only: UAT then judges this against factory ${esc(c.newerUat.head.slice(0, 7))}">${yes} on the latest UAT journeys</button><span class="muted">UAT journeys changed since this started: ${c.newerUat.files.map(esc).join(", ")}</span>` : ""}<textarea id="why" rows="3" placeholder="${placeholder}"></textarea><button class="btn" onclick="act('reject')">Send back</button>`;
+
+      function pauseButtons(c) {
+        if (allPaused)
+          return c.kind === "paused" || c.kind === "running"
+            ? `<span class="muted">Everything is paused; Resume all is in the sidebar.</span>`
+            : "";
+        if (c.kind === "paused")
+          return `<button class="btn primary" onclick="pauseRun(false)">Resume</button>`;
+        if (!["running", "needs", "stuck"].includes(c.kind)) return "";
+        return c.pauseRequested
+          ? `<span class="muted">Pausing before its next step.</span><button class="btn" onclick="pauseRun(false)">Don't pause</button>`
+          : `<button class="btn" onclick="pauseRun(true)" title="It finishes the step it's on, then waits">Pause</button>`;
+      }
+      const opened = () => cards.find((c) => c.id === openId);
+      async function pauseRun(on) {
+        const c = opened();
+        await post(`${c.at}/board/pause/${c.issue}`, { on });
+      }
+      async function pauseAll() {
+        const btn = document.getElementById("pause-all");
+        btn.disabled = true;
+        await Promise.all(
+          factories.map((f) =>
+            fetch(`${f.at}/board/pause/all`, {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ on: !allPaused }),
+            }).catch(() => {}),
+          ),
+        );
+        btn.disabled = false;
+        refresh();
+      }
+      const abandonButton = `<button class="btn" style="margin-left:auto" onclick="cleanUp(true)">Abandon…</button>`;
+      async function cleanUp(abandon) {
+        if (
+          abandon &&
+          !confirm(
+            "Abandon this task? Its worktree, local branch and any uncommitted changes are deleted, and the card goes. A pushed branch and PR stay on GitHub.",
+          )
+        )
+          return;
+        const c = opened();
+        await post(`${c.at}/board/cleanup/${c.issue}`, { abandon });
+      }
+
+      function openCard(id) {
+        const c = cards.find((c) => c.id === id);
+        if (!c) return;
+        const typing =
+          document.activeElement?.matches?.(
+            "#overlay input, #overlay textarea",
+          ) && openId === id;
+        if (typing) return; // don't wipe what you're writing; it refreshes when you're done
+        openId = id;
+        shown = key(c);
+        const [body, actions] = detail(c);
+        document.getElementById("drawer-body").innerHTML = `
+    <div class="top"><div><div class="sub">#${c.issue}${c.many && c.column !== "Issues" ? ` · on ${esc(c.factory)}` : ""}${c.url ? ` · <a href="${esc(c.url)}" target="_blank">issue on GitHub</a>` : ""}${c.lane?.workItem ? ` · ${esc(c.lane.workItem)}` : ""}</div><h2>${esc(c.title)}</h2></div>
+      <button class="close" onclick="closeCard()">×</button></div>
+    ${stepsBar(c)}<div class="content">${body}</div>`;
+        document.getElementById("actions").innerHTML =
+          actions +
+          pauseButtons(c) +
+          (c.kind === "needs" || c.kind === "stuck" ? abandonButton : "");
+        document.getElementById("overlay").className = "open";
+        if (c.waiting?.kind === "outcome-approval") loadDiff(c);
+        loadLog();
+      }
+      async function loadLog() {
+        const el = document.getElementById("log");
+        const c = opened();
+        if (!el || !c) return;
+        const text = await (await fetch(`${c.at}/board/log/${c.issue}`)).text();
+        const atEnd = el.scrollTop + el.clientHeight >= el.scrollHeight - 20;
+        el.innerHTML =
+          text
+            .split("\n")
+            .map(
+              (l) =>
+                `<div class="${/^===/.test(l) ? "h" : /✗|×|FAIL|failed/i.test(l) ? "d" : ""}">${esc(l)}</div>`,
+            )
+            .join("") || '<div class="muted">No output yet.</div>';
+        if (atEnd) el.scrollTop = el.scrollHeight;
+      }
+      function closeCard() {
+        openId = null;
+        document.getElementById("overlay").className = "";
+      }
+      document.addEventListener(
+        "keydown",
+        (e) => e.key === "Escape" && closeCard(),
+      );
+
+      async function loadDiff(c) {
+        const text = await (await fetch(`${c.at}/board/diff/${c.issue}`)).text();
+        const el = document.getElementById("diff");
+        if (!el) return;
+        const files = text
+          .split(/^(?=diff --git )/m)
+          .filter((f) => f.startsWith("diff --git"));
+        el.className = "";
+        el.innerHTML =
+          files
+            .map((f) => {
+              const name =
+                (f.match(/^\+\+\+ b\/(.+)$/m) ??
+                  f.match(/^--- a\/(.+)$/m) ??
+                  [])[1] ?? f.split("\n")[0];
+              const lines = f.split("\n"),
+                body = lines.slice(lines.findIndex((l) => l.startsWith("@@")));
+              const plus = body.filter((l) => l.startsWith("+")).length,
+                minus = body.filter((l) => l.startsWith("-")).length;
+              const stat = document.getElementById(`stat-${name}`);
+              if (stat)
+                stat.insertAdjacentHTML(
+                  "afterbegin",
+                  `<span class="plus">+${plus}</span><span class="minus">−${minus}</span>`,
+                );
+              const rows = body
+                .map(
+                  (l) =>
+                    `<div class="${l.startsWith("@@") ? "h" : l.startsWith("+") ? "a" : l.startsWith("-") ? "d" : ""}">${esc(l)}</div>`,
+                )
+                .join("");
+              return `<details ${isTest(name) ? "" : "open"}><summary>${esc(name)}</summary><pre class="diff">${rows}</pre></details>`;
+            })
+            .join("") || '<p class="muted">No differences.</p>';
+      }
+
+      async function act(action) {
+        const c = opened();
+        const why = document.getElementById("why")?.value;
+        if (action === "reject" && !why?.trim()) {
+          showError("Say why it goes back; the coder reads it.");
+          document.getElementById("why")?.focus();
+          return;
+        }
+        const body = {
+          token: c.token,
+          action,
+          why,
+          summary: document.getElementById("summary")?.value,
+          tests: document.getElementById("tests")?.value,
+          design: document.getElementById("design")?.value,
+          parts: document.getElementById("parts")?.value,
+          baseline:
+            action === "approve-latest-uat" ? c.newerUat?.head : undefined,
+        };
+        await post(`${c.at}/board/act/${c.issue}`, body);
+      }
+      async function startNumber(at, issue) {
+        await post(`${at}/board/start/${issue}`, {});
+      }
+      async function post(url, body) {
+        document
+          .querySelectorAll("#actions button")
+          .forEach((b) => (b.disabled = true));
+        const res = await fetch(url, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        if (!res.ok) {
+          showError(
+            (await res.json().catch(() => ({}))).error ?? res.statusText,
+          );
+          document
+            .querySelectorAll("#actions button")
+            .forEach((b) => (b.disabled = false));
+          return;
+        }
+        closeCard();
+        refresh();
+      }
+      function showError(message) {
+        document.querySelector("#actions .error")?.remove();
+        document
+          .getElementById("actions")
+          .insertAdjacentHTML(
+            "beforeend",
+            `<div class="error">${esc(message)}</div>`,
+          );
+      }
+
+      async function loadSync() {
+        const s = await (await fetch("/board/sync")).json().catch(() => null);
+        if (!s) return;
+        const when = (t) => {
+          const a = t ? ago(Date.parse(t)) : "";
+          return !a ? "never" : a === "just now" ? a : `${a} ago`;
+        };
+        const btn = document.getElementById("sync-btn");
+        btn.disabled = s.running;
+        btn.textContent = s.running ? "Syncing…" : "Sync";
+        document.getElementById("sync-info").innerHTML =
+          `GitHub and board code: ${when(s.vm)}.<br>Pi, skills and configs: ${when(s.laptop)} (sent from your laptop by <code>factory-ui</code>).`;
+        document.getElementById("sync-log").textContent = s.log;
+      }
+      async function sync() {
+        document.getElementById("sync-btn").disabled = true;
+        await fetch("/board/sync", { method: "POST" }).catch(() => {});
+        loadSync();
+      }
+
+      refresh();
+      loadSync();
+      setInterval(refresh, 5000);
+      setInterval(loadSync, 5000);
+      setInterval(loadLog, 3000);
+    </script>
+  </body>
+</html>

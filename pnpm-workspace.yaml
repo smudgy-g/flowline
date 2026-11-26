@@ -1,0 +1,6 @@
+packages:
+  - mastra
+
+allowBuilds:
+  esbuild: true
+  supabase: true
