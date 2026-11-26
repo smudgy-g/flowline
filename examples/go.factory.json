@@ -1,0 +1,16 @@
+{
+  "repo": "example/service",
+  "base": "main",
+  "workspace": "..",
+  "checkout": "service/main",
+  "worktrees": "service/worktrees",
+  "checks": {
+    "setup": [["go", "mod", "download"]],
+    "gates": [["go", "vet", "./..."], ["go", "test", "./..."]]
+  },
+  "skills": {
+    "packs": ["skills/core"],
+    "coder": { "always": ["ponytail"] },
+    "codeReviewers": ["architect"]
+  }
+}

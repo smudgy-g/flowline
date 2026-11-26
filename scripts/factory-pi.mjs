@@ -105,6 +105,8 @@ export async function runCheck(worktree, signal) {
   ].join('\n\n')
 }
 
+const hasCoderCheck = role => role === 'coder' && process.env.FACTORY_CUSTOM_CHECKS !== '1'
+
 export async function loadFactoryResources(worktree, role = 'review') {
   const install = process.env.PI_MANAGED_INSTALL_ROOT || join(homedir(), '.pi/agent/install')
   const version = readFileSync(join(install, 'current-version'), 'utf8').trim()
@@ -118,7 +120,7 @@ export async function loadFactoryResources(worktree, role = 'review') {
     cwd: worktree, agentDir: sdk.getAgentDir(), noExtensions: true,
     extensionFactories: [sdk.createCodemodeExtension({ models: false }), (pi) => {
       pi.on('tool_call', (event) => authorizeTool(worktree, role, event))
-      if (role === 'coder') pi.registerTool({
+      if (hasCoderCheck(role)) pi.registerTool({
         name: 'check', label: 'Check',
         description: "Lint (auto-fixing what it can) and typecheck the worktree, as the factory's gates will. Takes a minute or two.",
         parameters: Type.Object({}),
@@ -217,7 +219,7 @@ async function main() {
   const { session } = await sdk.createAgentSession({
     cwd: worktree, model, modelRuntime: runtime, resourceLoader: loader,
     tools: role === 'review' || role === 'planner' ? ['read', 'grep', 'find', 'ls', 'codemode']
-      : ['read', 'grep', 'find', 'ls', 'edit', 'write', 'codemode', ...(role === 'coder' ? ['check'] : [])],
+      : ['read', 'grep', 'find', 'ls', 'edit', 'write', 'codemode', ...(hasCoderCheck(role) ? ['check'] : [])],
     sessionManager: sdk.SessionManager.inMemory(),
   })
   const timer = setTimeout(() => { void session.abort() }, 30 * 60 * 1000)

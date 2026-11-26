@@ -251,13 +251,13 @@ const record = (worktree: string, title: string, body?: string) =>
 async function gate(
   worktree: string,
   name: string,
-  args: string[],
+  [bin, ...args]: string[],
 ): Promise<void> {
   const log = checksLog(worktree);
 
   await appendFile(
     log,
-    `\n=== ${name} · ${new Date().toISOString()} · pnpm ${args.join(" ")}\n`,
+    `\n=== ${name} · ${new Date().toISOString()} · ${bin} ${args.join(" ")}\n`,
   );
   const out = createWriteStream(log, { flags: "a" });
   let tail = "";
@@ -267,8 +267,8 @@ async function gate(
     // Gates and the UAT build take turns (scripts/run-uat.sh): together they run the VM out of memory.
     const child = spawn(
       "flock",
-      [heavyLock, "timeout", "-k", "30s", `${GATE_MINUTES}m`, "pnpm", ...args],
-      { cwd: worktree, env: { ...inherited, ...tools, ...testEnv } },
+      [heavyLock, "timeout", "-k", "30s", `${GATE_MINUTES}m`, bin, ...args],
+      { cwd: worktree, env: { ...inherited, ...tools, ...(config.checks ? { CI: "true" } : testEnv) } },
     );
     const take = (chunk: Buffer) => {
       out.write(chunk);
@@ -284,7 +284,7 @@ async function gate(
     throw new Error(
       `${name} hung: stopped after ${GATE_MINUTES} min. Either a test hung, or the laptop slept while it ran (the VM pauses with it, and the clock jumps on waking); Retry runs it again. The output ends:\n${tail}`,
     );
-  if (code !== 0) throw new Error(`pnpm ${args[0]} failed:\n${tail}`);
+  if (code !== 0) throw new Error(`${bin} ${args.join(" ")} failed:\n${tail}`);
 }
 
 const exists = (path: string) =>
@@ -421,7 +421,7 @@ async function inspect(worktree: string) {
   }
 
   // Format before fingerprinting, so formatting never changes approved content (FEEDBACK: e958dab).
-  if (present.length)
+  if (!config.checks && present.length)
     await run(worktree, `${worktree}/node_modules/.bin/prettier`, [
       "--write",
       "--ignore-unknown",
@@ -798,6 +798,12 @@ export const realOps: Ops = {
       });
     }
 
+    if (config.checks) {
+      for (const [bin, ...args] of config.checks.setup)
+        await run(worktree, bin, args, { CI: "true" });
+      return worktree;
+    }
+
     // Staging may have gained packages the VM's store lacks; fetch only downloads (no scripts), then the install stays offline.
     await run(worktree, "pnpm", ["fetch", "--ignore-scripts"]);
     await run(worktree, "pnpm", ["install", "--offline", "--frozen-lockfile"]);
@@ -818,6 +824,7 @@ export const realOps: Ops = {
       [`${factoryRoot}/scripts/factory-pi.mjs`, worktree, role, prompt],
       {
         FACTORY_BASE: `origin/${await baseOf(worktree)}`,
+        FACTORY_CUSTOM_CHECKS: config.checks ? "1" : "0",
         FACTORY_READABLE: JSON.stringify(config.readable),
         FACTORY_CODER_SKILLS: JSON.stringify(config.skills.coder),
       },
@@ -861,10 +868,7 @@ export const realOps: Ops = {
   },
 
   async runGates(worktree) {
-    const changedTests = (await changedFiles(worktree)).filter(isTestPath);
-    // tests/e2e runs only under the client's SSR config (a production Nuxt build); `pnpm test` finds no files there.
-    const ssrTests = changedTests.filter((f) => f.startsWith("tests/e2e/"));
-    const tests = changedTests.filter((f) => !ssrTests.includes(f));
+    await checkWorktree(worktree);
     await mkdir(historyDir(worktree), { recursive: true });
 
     await appendFile(
@@ -872,6 +876,25 @@ export const realOps: Ops = {
       `\n######## Checks · ${new Date().toISOString()}\n`,
     );
 
+    if (config.checks) {
+      for (const command of config.checks.gates) {
+        const name = command.join(" ");
+        try {
+          await gate(worktree, name, command);
+        } catch (error) {
+          const output = (error as Error).message;
+          if (/hung:/.test(output)) throw error;
+          return { ok: false, gate: name, output };
+        }
+        await inspect(worktree);
+      }
+      return { ok: true };
+    }
+
+    const changedTests = (await changedFiles(worktree)).filter(isTestPath);
+    // tests/e2e runs only under the client's SSR config (a production Nuxt build); `pnpm test` finds no files there.
+    const ssrTests = changedTests.filter((f) => f.startsWith("tests/e2e/"));
+    const tests = changedTests.filter((f) => !ssrTests.includes(f));
     const gates: Array<[string, string[]]> = [
       ["install", ["install", "--offline", "--frozen-lockfile"]],
       ["lint", ["lint"]],
@@ -916,7 +939,7 @@ export const realOps: Ops = {
           await autofix(worktree);
         }
 
-        await gate(worktree, name, args);
+        await gate(worktree, name, ["pnpm", ...args]);
       } catch (error) {
         // A hang says nothing about the code: stop the run (it waits as an error) instead of sending it to the coder.
         if (/hung:/.test((error as Error).message)) throw error;

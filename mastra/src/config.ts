@@ -12,7 +12,14 @@ export const factoryRoot =
 
 const SkillName = z.string().regex(/^[a-z0-9-]+$/);
 
+const Command = z.tuple([z.string().trim().min(1)]).rest(z.string());
+export const ProjectChecks = z.strictObject({
+  setup: z.array(Command).default([]),
+  gates: z.array(Command).min(1),
+});
+
 const Config = z.object({
+  checks: ProjectChecks.optional(),
   /** GitHub `owner/name` the issues and PRs live in. */
   repo: z.string().regex(/^[\w.-]+\/[\w.-]+$/),
   /** The branch every task builds on and its draft PR targets. */
@@ -51,6 +58,7 @@ const at = (path: string) => resolve(workspace, path);
 
 export const config = {
   repo: raw.repo,
+  checks: raw.checks,
   base: raw.base,
   workspace,
   checkout: at(raw.checkout),
