@@ -80,7 +80,7 @@ export function workItemName(issue: { number: number; title: string }): string {
   return name;
 }
 
-/** Changes that must be made in colonia/supabase/staging, never by a task. */
+/** Schema migrations: made outside the factory (see factory.config.json `readable`), never by a task. */
 export const isMigrationPath = (file: string) =>
   /(^|\/)(migrations?|database(-generated)?\.types\.ts)(\/|$)/i.test(file);
 /** Dependency, customer-data and integration files: listed separately at the outcome gate so the human reads them. */

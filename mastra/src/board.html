@@ -817,7 +817,7 @@
 
       function membersBlock(s) {
         if (!s?.members?.length) return "";
-        return `<h3>PRs in order · on <code>${esc(s.branch)}</code></h3><ol class="members">${s.members.map((m, i) => `<li class="${i < s.current ? "done" : i === s.current ? "now" : ""}">${esc(m.title)}${m.byHand ? ' <span class="tag test">by hand</span>' : ""}${m.number ? ` <a href="https://github.com/ColoniaTech/colonia_client/issues/${m.number}" target="_blank">#${m.number}</a>` : ""}${i < s.current ? " ✓" : ""}</li>`).join("")}</ol>`;
+        return `<h3>PRs in order · on <code>${esc(s.branch)}</code></h3><ol class="members">${s.members.map((m, i) => `<li class="${i < s.current ? "done" : i === s.current ? "now" : ""}">${esc(m.title)}${m.byHand ? ' <span class="tag test">by hand</span>' : ""}${m.number ? ` <a href="https://github.com/{{repo}}/issues/${m.number}" target="_blank">#${m.number}</a>` : ""}${i < s.current ? " ✓" : ""}</li>`).join("")}</ol>`;
       }
       function stackDetail(c) {
         const w = c.waiting ?? {},
