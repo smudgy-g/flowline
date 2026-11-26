@@ -10,7 +10,7 @@ One **tracker adapter** per factory, named in `factory.config.json`:
 "tracker": { "command": ["node", "trackers/local.mjs"], "env": {} }
 ```
 
-The factory runs `<command> <verb> [args…]` from the factory root with that `env`, never a shell string. Input beyond the arguments arrives on stdin; the reply is one JSON value on stdout. A nonzero exit is an infrastructure failure, and the run waits as `error` rather than guessing. The adapter is trusted factory code and runs on the host, not in a sandbox: it holds whatever credentials the tracker needs, and no agent can call it.
+The factory runs `<command> <verb> [args…]` from the project root with that `env`, never a shell string. Input beyond the arguments arrives on stdin; the reply is one JSON value on stdout. A nonzero exit is an infrastructure failure, and the run waits as `error` rather than guessing. The adapter is trusted factory code and runs on the host, not in a sandbox: it holds whatever credentials the tracker needs, and no agent can call it.
 
 | Verb | Arguments | Stdin | Stdout |
 |---|---|---|---|

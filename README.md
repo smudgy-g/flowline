@@ -1,35 +1,53 @@
 # Frankenstein software factory
 
-Turn a work item into a reviewed, acceptance-tested change against the branch your team chooses, through an agreed plan, a coder, project checks, cold review, your approval and black-box acceptance. The board shows every stage and the human gates. One installation serves one target repository.
+Turn a work item into a reviewed, acceptance-tested change on the branch your team chooses, through an agreed plan, a coder, project checks, cold review, your approval and black-box acceptance. The board shows every stage and the human gates.
 
-Each work item runs in **its own Docker Sandbox** (`sbx`): a microVM with its own kernel and Docker engine. The factory itself — board, run database, git, `gh`, credentials and the Pi agents — stays on the worker host. Every command that executes project code (install, fixes, checks, tests, preview, acceptance) runs inside the item's sandbox, so agent-written code never runs on the host and one work item cannot touch another.
+Install it once; run it in any repository you have checked out.
 
-## Configure a worker
+```sh
+npm i -g frankenstein-factory
+cd ~/code/your-project
+frankenstein setup        # writes .factory/, and says what your machine is still missing
+frankenstein board        # http://localhost:4111/board
+```
 
-[docs/setup.md](docs/setup.md) walks through a working setup end to end, with the failures it produced and their fixes.
+Each work item runs in **its own Docker Sandbox** (`sbx`): a microVM with its own kernel and Docker engine. The factory itself — board, run database, git, credentials and the Pi agents — stays on your machine. Every command that executes project code (install, fixes, checks, tests, preview, acceptance) runs inside the item's sandbox, so agent-written code never runs on your host and one work item cannot touch another.
 
-1. Use a worker that Docker Sandboxes supports (Ubuntu 24.04+ with KVM, Apple-silicon macOS, or Windows 11; only Ubuntu is exercised here — see [docs/sandboxes.md](docs/sandboxes.md)). Install Git, authenticated `gh`, Node and pnpm (`mise.toml`), and a managed Pi installation with model credentials. Set `FACTORY_MODEL_PLANNER`, `_CODER`, `_REVIEW` and `_TESTER` to available `provider/model` IDs. Install `sbx`, run `sbx login` once, and run `sbx policy init deny-all` on that worker; do not share its daemon with unrelated projects. You can watch the board from Linux, macOS or Windows over an SSH tunnel.
-2. Fork the factory separately from the target. Edit **`factory.config.json`**: `repo` names the target repository, `base` the branch a finished change is aimed at. Clone that repo at `checkout` with `origin` pointing to it. `workspace` resolves from the factory root; `checkout` and `worktrees` from `workspace`. `paths.tests` limits where the tester role may write, `paths.protected` blocks changes, `paths.sensitive` flags them for the human. Keep `skills/core` and add your own packs ([guide](skills/README.md)). [`examples/go.factory.json`](examples/go.factory.json) is a second profile.
-3. Build the **sandbox kit**: an image with your project's toolchain and GNU `timeout`. Name it in `sandbox.kit` with `cpus`, `memory`, `maxConcurrent` (start at one on a small worker) and `allowlist` — the exact hosts a build sandbox may reach, normally only package registries. Never bake credentials into a kit.
-4. Set `commands`: `setup` prepares a fresh worktree, `autofix` runs formatters, `check` is the coder's fast feedback, and `gates` are the required checks including the full suite. Each command is an executable plus literal arguments, never a shell string; `{changedCode}` expands to changed files matching `changedCode` globs. `commands.env` is public test configuration only. `commands.preview` is optional and backs `scripts/preview.sh WORK_ITEM`.
-5. Choose a **tracker** — where work items come from and where a finished change goes ([contract](docs/tracker.md)). `trackers/local.mjs` (the default) keeps items as Markdown in the target repo under `.factory/items/<id>.md`, the file name being the id, needs no account or network, and treats a change as accepted once your base branch contains its branch. `trackers/github.mjs` uses issues labelled `factory`/`factory-stack` and draft PRs: create both labels (`examples/issue-forms/*.yml` are the matching forms, for filing on GitHub directly), and give the worker only the rights it needs; only the authenticated user's issues and comments are trusted unless `FACTORY_ISSUE_AUTHORS` adds logins. Write your own for another tracker rather than changing factory code, and keep `.factory/**` in `paths.protected` so a task cannot edit its own work item.
-6. Write the **acceptance adapter** (below).
-7. On the worker:
+[docs/setup.md](docs/setup.md) is the full walkthrough, written from a real setup, with every failure it produced and the fix.
 
-   ```sh
-   pnpm install --frozen-lockfile
-   mkdir -p mastra/.data
-   pnpm --dir mastra run dev
-   ```
+## What lives where
 
-   Reach **http://localhost:4111/board** through an SSH tunnel. Create a work item and start its card; see [the workflow](WORKFLOW.md). The board is a privileged operator UI with no authentication: keep it on loopback. The worker still holds git, `gh` and model credentials, so treat it as trusted infrastructure.
+| | |
+|---|---|
+| **The package** | the factory's code, skill packs, tracker adapters. Installed once. |
+| **`.factory/` in your repo** | `config.json`, the acceptance adapter, work items with the local tracker. Committed and reviewed like any other code. |
+| **`~/.local/state/frankenstein/<project>/`** | the run database, logs and records for this checkout. Never in your repository, never inside a sandbox. |
 
-## Acceptance adapter
+## Configure
 
-`acceptance/` belongs to the factory operator, not the task. `acceptance.inputs` lists the factory paths archived from the approved factory commit; `acceptance.command` runs from those read-only inputs. Acceptance runs in a **fresh sandbox created with no network at all** — not a policy switch on the build sandbox, which [does not close existing connections](docs/sandboxes.md). The code under test arrives as `$PROJECT_ARCHIVE`, a git archive of the **pushed commit**, never the live worktree. The adapter gets `$REPO`, `$REF`, `$COMMIT`, `$INPUTS`, and `$ASSETS` when `acceptance.assets` names an operator-owned read-only directory (pre-staged images and fixtures, since there is no network). Keep the application and your test runner in separate containers, and never give the application the report directory or the Docker socket.
+`.factory/config.json` is the whole of it; `frankenstein setup` writes a starting point.
 
-Print one JSON object on stdout, for example `{"commit":"<the tested SHA>","pass":false,"detail":"Checkout journey failed at payment confirmation"}`. Exit zero for a completed verdict including a failure; use stderr for logs and exit nonzero for infrastructure failures. A wrong SHA, malformed verdict, timeout or missing adapter blocks delivery; the shipped stub refuses to approve anything. The result is recorded under `.cache/run-*/report.json`.
+- `base` is the branch work starts from and changes are aimed at; `worktrees` says where task worktrees go.
+- `commands` are what the factory runs in a work item's sandbox: `setup` prepares a fresh worktree, `autofix` runs formatters, `check` is the coder's fast feedback, and `gates` are the required checks including the full suite. Each is a **list of commands**, each command an executable plus literal arguments, never a shell string. `{changedCode}` expands to changed files matching `changedCode` globs.
+- `sandbox.kit` is an image carrying your toolchain and GNU `timeout`; `allowlist` is the exact hosts a build sandbox may reach, normally only package registries. Start `maxConcurrent` at 1 on a small machine. Never bake credentials into a kit.
+- `paths.tests` limits where the tester role may write, `paths.protected` blocks changes (keep `.factory/**` there), `paths.sensitive` flags them for you at the approval gate.
+- `tracker` names where work items come from: `local` (the default) keeps them as Markdown in your repo under `.factory/items/<id>.md` and needs no account or network; `github` uses issues and draft PRs. Write your own rather than changing factory code — [the contract](docs/tracker.md) is twelve verbs.
+- `skills.packs` are copied into each worktree; a bare name is one of the factory's, a path is yours ([guide](skills/README.md)).
+
+[`examples/go.factory.json`](examples/go.factory.json) is a worked profile.
+
+## The acceptance adapter
+
+`.factory/acceptance/run.sh` decides whether a change may be delivered, and the shipped stub refuses everything until you write it.
+
+It runs in a **sandbox created with no network at all**, against `$PROJECT_ARCHIVE`, a git archive of the **pushed commit**. It is pinned to the copy on your **base branch**, so a task cannot influence its own acceptance. It gets `$REPO`, `$REF`, `$COMMIT`, `$INPUTS`, and `$ASSETS` when `acceptance.assets` names a read-only directory of pre-staged fixtures — which is how a toolchain reaches a sandbox that cannot download one.
+
+Print one JSON object on stdout, for example `{"commit":"<the tested SHA>","pass":false,"detail":"Checkout journey failed at payment confirmation"}`. Exit zero for a completed verdict including a failure; use stderr for logs and exit nonzero for infrastructure failures. A wrong SHA, malformed verdict, timeout or missing adapter blocks delivery.
+
+## Requirements
+
+A machine Docker Sandboxes supports (Ubuntu 24.04+ with KVM, Apple-silicon macOS, or Windows 11; only Ubuntu is exercised here — see [docs/sandboxes.md](docs/sandboxes.md)), with `sbx` signed in and `sbx policy init deny-all` run; Node 22.18+; git; and a Pi installation with model credentials. The board is unauthenticated: keep it on loopback, and reach a remote one through an SSH tunnel.
 
 ## Development
 
-`pnpm --dir mastra run check` type-checks and exercises the workflow with fake side effects. `node --test scripts/*.test.mjs` checks the agent guard and the content tree. See [mastra/README.md](mastra/README.md) for the implementation map and [docs/sandboxes.md](docs/sandboxes.md) for what was measured on a real worker.
+`npm run check` type-checks and exercises the workflow with fake side effects. [docs/internals.md](docs/internals.md) is the implementation map.

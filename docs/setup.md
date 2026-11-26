@@ -1,42 +1,46 @@
 # Setting up a factory
 
-What one person actually did to bring a factory up from nothing, in the order it worked. The worker here is
-Ubuntu 24.04 in a VM with nested KVM; the target is a throwaway repository with the local tracker, so no GitHub
-account, token or network is involved.
+What one person actually did, in the order it worked, on Ubuntu 24.04 with nested KVM. Every step ends in a
+command whose output tells you it worked; [Troubleshooting](#troubleshooting) lists the failures this produced.
 
-Every step ends in a command whose output tells you it worked. If one fails, [Troubleshooting](#troubleshooting)
-lists the failures this setup actually produced.
+The factory is installed once and run inside your repository. Three directories matter, and keeping them apart is
+the whole design:
 
-## 1. A worker that can run sandboxes
+| | |
+|---|---|
+| the installed package | the factory's code, skills and tracker adapters |
+| `.factory/` in your repo | config, the acceptance adapter, and work items with the local tracker |
+| `~/.local/state/frankenstein/<project>/` | the run database, logs and records for this checkout |
 
-Docker Sandboxes needs Ubuntu 24.04+ with KVM, Apple-silicon macOS, or Windows 11. Only Ubuntu is exercised
-here ([what was measured](sandboxes.md)).
+## 1. A machine that can run sandboxes
+
+Docker Sandboxes needs Ubuntu 24.04+ with KVM, Apple-silicon macOS, or Windows 11. Only Ubuntu is exercised here
+([what was measured](sandboxes.md)).
 
 ```sh
-grep -c vmx /proc/cpuinfo                 # not zero
-cat /sys/module/kvm_intel/parameters/nested   # Y, inside a VM
+cat /sys/module/kvm_intel/parameters/nested   # Y, if you are inside a VM
 sbx --version
-sbx policy init deny-all                  # the factory refuses to run without this
+sbx policy init deny-all                      # the factory refuses to run without this
 ```
 
-`sbx` must be signed in once (`sbx login`) by a person at a terminal. Afterwards the factory drives it headless.
-Give the worker its own machine or VM: the factory asserts the global deny-all policy before every sandbox, so a
-daemon shared with unrelated projects will fight it.
+`sbx` must be signed in once (`sbx login`) by a person at a terminal; afterwards the factory drives it headless.
+Give it its own machine or VM: the factory asserts the global deny-all policy before every sandbox, so a daemon
+shared with unrelated projects will fight it.
 
-## 2. Node, pnpm and Pi on the worker
+## 2. Node, the factory, and Pi
 
 ```sh
 curl -fsSL https://nodejs.org/dist/v22.19.0/node-v22.19.0-linux-x64.tar.xz -o /tmp/node.tar.xz
 sudo tar -xJf /tmp/node.tar.xz -C /usr/local --strip-components=1
-corepack enable && corepack prepare pnpm@11.22.0 --activate
-sudo npm i -g @earendil-works/pi-coding-agent
+sudo npm i -g frankenstein-factory @earendil-works/pi-coding-agent
+frankenstein --help
 ```
 
-Sign Pi in on the worker (`pi` once interactively), or copy `~/.pi/agent/auth.json` from a machine that is already
-signed in. `pi --list-models` must list models.
+Sign Pi in (`pi` once interactively), or copy `~/.pi/agent/auth.json` from a machine that is already signed in.
+`pi --list-models` must list models.
 
-The factory loads Pi as a library from a **managed install layout**, not from `$PATH`. A plain global install has
-no such layout, so point one at it:
+The factory loads Pi as a library from a **managed install layout**, which a plain global install does not have.
+Point one at it:
 
 ```sh
 pkg=$(npm root -g)/@earendil-works/pi-coding-agent
@@ -57,86 +61,69 @@ export FACTORY_MODEL_TESTER=anthropic/claude-haiku-5-5
 ```
 
 Calls are billed to whatever Pi is signed in to. To bill Claude to a separate API key instead of a stored login,
-put the key in `~/.config/factory/anthropic-api-key`; it is used for the process only and never written to
+put the key in `~/.config/factory/anthropic-api-key`; it is used for that process only and never written to
 `auth.json`.
 
-## 3. The factory checkout
-
-**Clone it — do not copy the files.** The factory reads its own git history to pin acceptance inputs, so a
-directory without `.git` fails at intake.
+## 3. Set your repository up
 
 ```sh
-git clone -b main <your factory fork> ~/factory
-cd ~/factory && pnpm install --frozen-lockfile && mkdir -p mastra/.data
+cd ~/code/your-project
+frankenstein setup
 ```
 
-## 4. The target repository
+It writes `.factory/config.json`, `.factory/items/`, and an acceptance stub, then reports what your machine is
+still missing. It never touches anything outside `.factory/`, and never overwrites what is already there.
 
-The factory needs a checkout whose `origin` it can push branches to. `origin` can be a bare repository on the same
-machine; nothing here needs GitHub.
+Your repository needs an `origin` remote: the factory pushes each task branch to it, and acceptance tests the
+**pushed** commit. `origin` may be a bare repository on the same machine — nothing here needs a forge.
 
-```sh
-git init --bare ~/project/origin.git
-git clone ~/project/origin.git ~/project/main      # or add the remote to an existing clone
-```
-
-`workspace` in the config resolves from the factory root, and `checkout`/`worktrees` from `workspace`. With
-`workspace: ".."`, `checkout: "project/main"` and the factory at `~/factory`, the checkout is `~/project/main` and
-each work item gets `~/project/worktrees/<name>`.
-
-## 5. The sandbox kit
+## 4. The sandbox kit
 
 A kit is the image every sandbox for this project starts from. It must carry your project's toolchain and GNU
 `timeout`, because a **build sandbox reaches only the hosts in `sandbox.allowlist`, and the acceptance sandbox has
 no network at all**.
 
-The built-in `shell` kit ships bash, git, curl, make, jq, python and a Docker engine — but no Node and no other
-language runtime. In `sbx` 0.54.1 a kit may only name an image; `sandbox.build` with a Dockerfile validates but is
-**not implemented**, and `sbx` silently uses `sandbox.image` instead. Until that lands there are two honest options:
+The built-in `shell` kit ships bash, git, curl, make, jq, python and a Docker engine — but no language runtime. In
+`sbx` 0.54.1 a kit may only name an image; `sandbox.build` with a Dockerfile validates but is **not implemented**,
+and `sbx` silently uses `sandbox.image` instead. Until that lands there are two honest options:
 
-- **Publish an image** your team builds elsewhere, and name it in a kit's `sandbox.image`.
-- **Install the toolchain in `commands.setup`**, allowlisting the host it comes from. That is what this walkthrough
-  does: a `tools/setup.sh` in the target repo fetches Node into `$HOME/node`, `sandbox.allowlist` holds
-  `nodejs.org`, and `commands.env.PATH` puts it first. It costs a few seconds per sandbox, and an offline
-  acceptance run must get the same toolchain from `acceptance.assets` instead, since it cannot download anything.
+- **Publish an image** your team builds elsewhere, and name it in `sandbox.kit`.
+- **Install the toolchain in `commands.setup`**, allowlisting the host it comes from. This walkthrough does that: a
+  `tools/setup.sh` in the repository fetches Node into `$HOME/node`, `sandbox.allowlist` holds `nodejs.org`, and
+  `commands.env.PATH` puts it first. It costs a few seconds per sandbox, and an offline acceptance run must get the
+  same toolchain from `acceptance.assets` instead, since it cannot download anything.
 
-## 6. The configuration
+## 5. The configuration
 
-`factory.config.json` is the whole of the project-specific setup. The profile used here:
+`.factory/config.json`, as used here:
 
 ```json
 {
-  "repo": "local/widget",
   "base": "main",
-  "workspace": "..",
-  "checkout": "project/main",
-  "worktrees": "project/worktrees",
   "paths": { "tests": ["tests/**"], "protected": [".factory/**"], "sensitive": [] },
   "sandbox": { "kit": "shell", "cpus": 2, "memory": "2g", "allowlist": ["nodejs.org"], "maxConcurrent": 1 },
-  "tracker": { "command": ["node", "trackers/local.mjs"], "env": {} },
   "commands": {
     "changedCode": ["**/*.js"],
     "setup": [["bash", "tools/setup.sh"]],
-    "autofix": [],
     "check": [["npm", "test"]],
     "gates": [["npm", "test"]],
     "env": { "CI": "true", "PATH": "/home/agent/node/bin:/usr/local/bin:/usr/bin:/bin" }
   },
-  "acceptance": { "inputs": ["acceptance"], "command": ["bash", "acceptance/run.sh"], "env": {} },
-  "skills": { "packs": ["skills/core"], "coder": { "always": ["ponytail"] },
-              "codeReviewers": ["architect", "interrogate", "change-impact"] }
+  "acceptance": { "assets": ".factory/assets" }
 }
 ```
 
 `setup`, `autofix`, `check` and `gates` are **lists of commands**, each command an argv array — `[["npm", "test"]]`,
-never `["npm", "test"]` and never a shell string. `repo` is only a label with the local tracker. Start
-`maxConcurrent` at 1: a 2 GiB sandbox on a 4 GiB worker leaves no room for a second.
+never `["npm", "test"]` and never a shell string. Start `maxConcurrent` at 1: a 2 GiB sandbox on a 4 GiB machine
+leaves no room for a second. `worktrees` defaults to a sibling directory of your repository.
 
-## 7. A work item
+Everything else has a default: `base` is your current branch at setup, `tracker` is the local one, and skills are
+the factory's `core` pack.
 
-With the local tracker a work item is a Markdown file in the **target** repo. Its first `# ` heading is the title;
-without one the factory shows "Work item". The id is the file name, so `.factory/items/basket-discount.md` is item
-`basket-discount`.
+## 6. A work item
+
+With the local tracker a work item is a Markdown file in your repository. Its first `# ` heading is the title;
+the id is the file name, so `.factory/items/basket-discount.md` is item `basket-discount`.
 
 ```markdown
 # Apply a percentage discount to the basket total
@@ -155,62 +142,46 @@ without one the factory shows "Work item". The id is the file name, so `.factory
 fast lane
 ```
 
-Commit and push it, then check the factory can see it:
+**New item** on the board writes one for you, through whichever tracker you configured. Keep `.factory/**` in
+`paths.protected` so a task cannot edit its own work item.
+
+## 7. Run it
 
 ```sh
-cd ~/factory && node trackers/local.mjs list     # needs FACTORY_CHECKOUT and FACTORY_BASE when run by hand
+frankenstein board      # http://localhost:4111/board
+frankenstein status
 ```
 
-Keep `.factory/**` in `paths.protected` so a task cannot edit its own work item.
-
-## 8. Run it
-
-```sh
-cd ~/factory && node mastra/src/cli.ts start basket-discount
-node mastra/src/cli.ts status basket-discount
-```
-
-or start the board on the worker and watch it from your own machine:
-
-```sh
-pnpm --dir mastra run dev        # on the worker
-```
-
-Put the worker in `~/.ssh/config` once, with the board's tunnel built in, so every later command is short:
+For a remote machine, put it in `~/.ssh/config` once, with the board's tunnel built in:
 
 ```
 Host factory-worker
-  HostName <worker-host>
+  HostName <host>
   User worker
   IdentityFile ~/.ssh/factory_worker
   LocalForward 4111 127.0.0.1:4111
 ```
 
-Then `ssh factory-worker` gives you a shell **and** the tunnel, `ssh -fN factory-worker` gives you the tunnel
-alone, and `ssh factory-worker 'cd ~/factory && node mastra/src/cli.ts status'` runs one command. Open
-**http://localhost:4111/board**. The board is unauthenticated: keep it on loopback and reach it only through the
-tunnel.
+Then `ssh factory-worker` gives you a shell **and** the tunnel, `ssh -fN factory-worker` the tunnel alone, and
+`ssh factory-worker 'cd ~/code/your-project && frankenstein status'` runs one command. The board is
+unauthenticated: keep it on loopback and reach it only through the tunnel.
 
 The board remembers other factories you have tunnelled in, in the browser's local storage, and shows a red banner
 for any it cannot reach. **`/board?peers=`** forgets them; `?peers=worker2:4112` sets them.
 
-## 9. The acceptance adapter
+## 8. The acceptance adapter
 
-The stub in `acceptance/run.sh` refuses to pass anything, so the first run stops at UAT with *"Acceptance is not
-configured"*. That is the design: nothing ships until you write a real one.
+The stub in `.factory/acceptance/run.sh` refuses to pass anything, so the first run stops at UAT with *"Acceptance
+is not configured"*. That is the design: nothing ships until you write a real one.
 
 The adapter runs in a **sandbox created with no network**, against `$PROJECT_ARCHIVE`, a git archive of the pushed
 commit. It therefore cannot install its toolchain the way `commands.setup` does. Stage what it needs in a
-directory of your own and name it in `acceptance.assets`; the factory mounts it read-only as `$ASSETS`:
+directory and name it in `acceptance.assets`; the factory mounts it read-only as `$ASSETS`:
 
 ```sh
-mkdir -p ~/factory/.assets
-curl -fsSL https://nodejs.org/dist/v22.19.0/node-v22.19.0-linux-x64.tar.gz -o ~/factory/.assets/node-linux-x64.tar.gz
-echo '.assets/' >> ~/factory/.git/info/exclude      # assets are big; keep them out of the factory repo
-```
-
-```json
-"acceptance": { "inputs": ["acceptance"], "command": ["bash", "acceptance/run.sh"], "assets": ".assets", "env": {} }
+mkdir -p .factory/assets
+curl -fsSL https://nodejs.org/dist/v22.19.0/node-v22.19.0-linux-x64.tar.gz -o .factory/assets/node-linux-x64.tar.gz
+echo '.factory/assets/' >> .gitignore      # assets are big; keep them out of git
 ```
 
 The adapter gets `$REPO`, `$REF`, `$COMMIT`, `$INPUTS` (its own directory, read-only, as the working directory),
@@ -227,37 +198,39 @@ published function.
 Exit zero for any completed verdict, including a failure. Exit nonzero only for an infrastructure problem — then
 the run waits for you to fix it rather than recording a verdict. A verdict naming the wrong commit is rejected.
 
-**The adapter is pinned to a factory commit.** A run judges itself against the factory commit it was approved at,
-so editing `acceptance/run.sh` after approval changes nothing: the old version keeps running. Commit the fix, then
-point the run forward at it:
+**The adapter is pinned to your base branch.** A run judges itself against `.factory/acceptance/` as it stood on
+`base` when the item started, so a task branch can edit those files in its worktree and change nothing about how
+it is judged — and editing them on your checkout does not affect a running item either. Commit the fix to `base`,
+then point the run forward at it:
 
 ```sh
-git -C ~/factory add acceptance/run.sh && git -C ~/factory commit -m "Acceptance for …"
-node mastra/src/cli.ts retry <item> --baseline $(git -C ~/factory rev-parse HEAD)
+git commit -m "Acceptance for …" .factory/acceptance/run.sh && git push origin main
+frankenstein retry <item> --baseline $(git rev-parse origin/main)
 ```
 
-Baselines only move forward along factory history, so a run cannot be pointed back at inputs it already failed.
+Baselines only move forward, and only along the base branch.
 
 ## Troubleshooting
 
-Every one of these came up during this setup.
+Every one of these came up during a real setup.
 
 | What you see | Why | Fix |
 |---|---|---|
+| `No .factory/config.json here or above` | You are outside a set-up repository | `cd` into it, or `frankenstein setup` |
 | `expected tuple, received string` on `commands.check` | A command list given one argv instead of a list of them | `[["npm", "test"]]` |
-| `intake failed: git rev-parse failed: not a git repository` | The factory directory was copied, not cloned | Clone the factory; it reads its own history |
+| `Not inside a git repository` | `setup` needs a checkout with an `origin` remote | `git init` and add `origin` |
 | `provision failed: Invalid task branch` | The branch name has characters the factory refuses | Check the item id: `[A-Za-z0-9._-]`, no `..` |
 | `Invalid sandbox work item` | Same, for the sandbox name | Same |
 | `ENOENT … .pi/agent/install/current-version` | Pi is installed but not as a managed install | Step 2's symlink and `current-version` |
-| `The planner runs on Claude and needs …/anthropic-api-key` | Older factory build demanded a key file | Update; any provider Pi is signed in to now works |
-| `Worker needs an exclusive deny-all network policy` | `sbx policy init deny-all` was never run, or another project widened it | Re-run it; give the worker its own daemon |
-| `node: command not found` inside a sandbox | The kit has no Node | Step 5: install it in `setup`, or publish an image that has it |
+| `Worker needs an exclusive deny-all network policy` | `sbx policy init deny-all` was never run, or another project widened it | Re-run it; give the machine its own daemon |
+| `node: command not found` inside a sandbox | The kit has no Node | Step 4: install it in `setup`, or publish an image that has it |
 | `tar … xz: Cannot exec` inside a sandbox | The kit has no `xz` | Fetch the `.tar.gz` build |
-| `Work item X already has a run` | A run exists, including a failed one | `fx status X`, then `fx retry X`; clean up to start over |
-| `This state belongs to <repo> via <tracker>` | `mastra/.data` was built against a different repo or tracker | Use a separate factory checkout, or clear `mastra/.data` |
+| `Work item X already has a run` | A run exists, including a failed one | `frankenstein status X`, then `retry`; clean up to start over |
+| `This state belongs to <repo> via <tracker>` | The state directory was built against a different repo or tracker | Clear `~/.local/state/frankenstein/<project>/` |
 | Nothing listed, title shows "Work item" | The item file has no `# ` heading | Add one |
 | `Can't reach the <name> factory` banner | A peer factory remembered from an earlier session | Open `/board?peers=` to forget it |
-| `Acceptance adapter failed (2): Acceptance is not configured` | The shipped stub, which never passes | Step 9 |
-| A fixed adapter still fails the same way | The run is pinned to the factory commit it was approved at | `fx retry <item> --baseline $(git rev-parse HEAD)` |
+| `Acceptance adapter failed (2): Acceptance is not configured` | The shipped stub, which never passes | Step 8 |
+| A fixed adapter still fails the same way | The run is pinned to the base-branch commit it started at | `frankenstein retry <item> --baseline $(git rev-parse origin/main)` |
+| `Acceptance inputs must be on <base>` | The baseline commit is not on the base branch | Push the fix to `base` first |
 | `UAT tested <sha>, expected <sha>` | The adapter reported a commit other than `$COMMIT` | Echo `$COMMIT` in the verdict |
 | `Sandbox: missing` on a card | The sandbox was removed under a running item | **Recreate sandbox** on the card, then **Retry** |
