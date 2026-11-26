@@ -35,7 +35,6 @@ export { factoryRoot } from "./config.ts";
 const workspace = config.workspace;
 const client = config.checkout;
 const worktrees = config.worktrees;
-const workmuxConfig = `${client}/.workmux.agent-task.yaml`;
 const projectSkills = config.skills;
 export const issueRepo = config.repo;
 
@@ -728,6 +727,19 @@ export const realOps: Ops = {
   async provision(branch, base) {
     // Always branch from GitHub's tip; the local staging checkout is never kept current.
     await run(client, "git", ["fetch", "origin", base]);
+    // workmux's settings for a task worktree, from factory.config.json.
+    const workmuxConfig = `${factoryRoot}/.cache/workmux.agent-task.yaml`;
+    await mkdir(dirname(workmuxConfig), { recursive: true });
+    await writeFile(
+      workmuxConfig,
+      [
+        `main_branch: ${JSON.stringify(config.base)}`,
+        `base_branch: ${JSON.stringify(config.base)}`,
+        `worktree_dir: ${JSON.stringify(worktrees.slice(0, -1))}`,
+        "agent: pi",
+        "",
+      ].join("\n"),
+    );
     const receipt = JSON.parse(
       await run(client, "workmux", [
         "add",
@@ -747,6 +759,12 @@ export const realOps: Ops = {
     const worktree = receipt.worktree_path as string;
     await checkWorktree(worktree);
     await mkdir(`${worktree}/.agents/artefacts`, { recursive: true });
+    // A project that keeps AGENTS.md out of its repo (gitignored in the checkout) still gives every task one.
+    if (
+      !(await exists(`${worktree}/AGENTS.md`)) &&
+      (await exists(`${client}/AGENTS.md`))
+    )
+      await cp(`${client}/AGENTS.md`, `${worktree}/AGENTS.md`);
 
     // A stack member reads the stack's design and history: what earlier PRs decided.
     if (base.startsWith("stack/") && (await exists(stackDir(base)))) {

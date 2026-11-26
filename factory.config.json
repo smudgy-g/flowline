@@ -4,6 +4,6 @@
   "workspace": "..",
   "checkout": "client/staging",
   "worktrees": "client/worktrees",
-  "skills": "agents/.agents/skills",
+  "skills": "skills",
   "readable": ["supabase/staging"]
 }

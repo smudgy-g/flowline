@@ -52,7 +52,7 @@ An issue (or stack) whose form says **Lane: standard** runs the same workflow wi
 - **Wider code review.** Each round adds `architect`, `interrogate`, `change-impact` and `typescript-guidance` beside the usual reviewer, findings tagged with who made them. Critical and high block as before. An extra reviewer with no readable findings is recorded and skipped.
 - **Stack design review.** A standard stack's design and PR list go to `plan-fitness` and `architect` before you approve. If they propose a different PR list, the card shows it next to the current one: **Approve with the proposed list** rewrites the parent issue's "PRs in order" and the sub-issues follow it.
 - **Splitting a PR** (any lane). At plan approval, **Split into PRs** takes one PR per line (prefilled with the reviewers' proposal, if any). The card keeps the first part and replans for it alone. On staging the other parts become new `factory` issues straight away (the original gets a comment linking them). In a stack they become sub-issues right after this member once it finishes, and the parent's list and later sub-issues' `n/total` titles follow.
-- A standard run checks its reviewer skills load before planning (`checkSkills`). The goldfish skills are user-level (`~/.agents/skills`, sent by `factory-ui`); the rest come from the `agents` repo.
+- A standard run checks its reviewer skills load before planning (`checkSkills`). All the agents' skills live in this repo's `skills/` (`factory.config.json` `skills`), copied into each worktree.
 - Cost: up to 12 review calls per plan draft (4 per review, 3 reviews), 4 extra per code-review round, 2 per stack design.
 
 ## How it works

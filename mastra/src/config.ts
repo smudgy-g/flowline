@@ -1,5 +1,5 @@
-// The project this factory works on: factory.config.json at the factory root. Paths are relative to `workspace`,
-// which is relative to the factory root.
+// The project this factory works on: factory.config.json at the factory root. `workspace` and `skills` are relative
+// to the factory root; the other paths are relative to `workspace`.
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -20,7 +20,7 @@ const Config = z.object({
   checkout: z.string(),
   /** Where the factory creates each task's worktree. */
   worktrees: z.string(),
-  /** Copied into each worktree as .agents/skills. */
+  /** The agents' skills, copied into each worktree as .agents/skills (relative to the factory root). */
   skills: z.string(),
   /** Outside the worktree, what agents may read (e.g. the schema repo). */
   readable: z.array(z.string()).default([]),
@@ -39,6 +39,6 @@ export const config = {
   checkout: at(raw.checkout),
   /** Ends in `/`, so a prefix check can't match a sibling directory. */
   worktrees: `${at(raw.worktrees)}/`,
-  skills: at(raw.skills),
+  skills: resolve(factoryRoot, raw.skills),
   readable: raw.readable.map(at),
 };
