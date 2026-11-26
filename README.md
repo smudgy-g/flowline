@@ -24,7 +24,7 @@ Prerequisites (all in the VM image): Docker with cached Supabase images, cached 
 
 For a dedicated Ubuntu worker install Docker `sbx`, log in once, and initialize `sbx policy init deny-all` **on that worker only**. Do not share its daemon with unrelated projects. `factory.config.json` → `sandbox` defines the trusted `kit` (the shell fixture is for testing; supply a project-ready toolchain), `cpus`, `memory` (`m` or `g`), exact registry hostnames in `allowlist`, and `maxConcurrent` running sandboxes. Start with one on a 4 GiB worker. Never put credentials in the kit, project files or command environment. UAT uses a separate fresh deny-all sandbox and read-only pre-staged dependencies, not a policy switch on the build VM. [Measured worker results](docs/sandboxes.md).
 
-The CLI wrapper by itself does not migrate the workflow: do not move the legacy factory out of its VM until project commands, UAT and host hardening are wired and tested.
+Install and project checks use `commands.setup`, `autofix`, `check` and `gates` in order. Each command is an executable and literal arguments. `{changedCode}` expands to existing changed files matching the configured globs (no matches skips that command). `commands.env` is public test configuration, never credentials. The kit must provide those tools, including GNU `timeout`; the shipped `shell` smoke kit is not a production Node toolchain. Records are kept in `mastra/.data/items/<workItem>/`, outside the mount. Do not deploy this migration until UAT and preview are also isolated.
 
 ## Limits
 

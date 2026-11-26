@@ -1,7 +1,7 @@
 // The fast lane's real side effects, ported from extensions/behaviors/agent_task.ts, uat.ts and uat_integrity.ts.
 // Pi gets no shell: everything that touches git, the network or approvals happens here.
 import { execFile, spawn } from "node:child_process";
-import { createWriteStream, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import {
   appendFile,
@@ -17,6 +17,8 @@ import {
 import { basename, dirname } from "node:path";
 import { promisify } from "node:util";
 import { config, factoryRoot } from "./config.ts";
+import { sandbox } from './sandbox.ts';
+import { projectCommands } from './project-commands.ts';
 import { taskGitEnv } from './worktree-git.ts';
 import type { Ops } from "./fast-lane.ts";
 import type { StackOps } from "./stack.ts";
@@ -117,14 +119,6 @@ const uatInputs = [
   "scripts/summarize.mjs",
 ];
 
-const testEnv = {
-  CI: "true",
-  NUXT_PUBLIC_SUPABASE_URL: "http://127.0.0.1:54321",
-  NUXT_PUBLIC_SUPABASE_KEY: "test-key",
-  STUDIO_GITHUB_TOKEN: "test-token",
-};
-
-const nuxtEnv = { CI: "true", NUXT_TELEMETRY_DISABLED: "1" };
 
 /**
  * The environment for everything the factory runs. `mastra dev` runs with NODE_ENV=production, which made the client's
@@ -133,20 +127,6 @@ const nuxtEnv = { CI: "true", NUXT_TELEMETRY_DISABLED: "1" };
 const { NODE_ENV: _serverMode, ...inherited } = process.env;
 const exec = promisify(execFile);
 
-/**
- * Commands in the client run with that checkout's own toolchain (its mise.toml), not the Node this server started
- * with: a worktree installed and tested with another Node lost better-sqlite3's native build, and every test failed
- * to start. Each worktree follows its own pin, so a Node bump on staging needs nothing here.
- */
-async function toolchain(cwd: string): Promise<Record<string, string>> {
-  if (cwd !== client && !cwd.startsWith(worktrees)) return {};
-  const { stdout } = await exec("mise", ["bin-paths"], { cwd, env: inherited });
-  return {
-    PATH: [...stdout.trim().split("\n").filter(Boolean), inherited.PATH].join(
-      ":",
-    ),
-  };
-}
 
 async function run(
   cwd: string,
@@ -158,8 +138,7 @@ async function run(
     const { stdout } = await exec(bin, args, {
       cwd,
       env: { ...inherited,
-        ...(cwd.startsWith(worktrees) && (bin === 'git' || bin === 'bash') ? await taskGitEnv(client,cwd) :
-          bin === 'git' || bin === 'gh' || bin === 'workmux' ? {} : await toolchain(cwd)), ...env },
+        ...(cwd.startsWith(worktrees) && (bin === 'git' || bin === 'bash') ? await taskGitEnv(client,cwd) : {}), ...env },
       maxBuffer: 64 * 1024 * 1024,
     });
     return stdout.trim();
@@ -171,7 +150,6 @@ async function run(
   }
 }
 /** Runs vm/sync-in-vm.sh on its own, since it may restart this server; it writes its progress to syncLog. */
-const heavyLock = `${factoryRoot}/.cache/heavy.lock`;
 export const syncLog = `${factoryRoot}/mastra/.data/logs/sync.log`;
 export function syncVm() {
   const child = spawn("bash", ["-l", `${factoryRoot}/vm/sync-in-vm.sh`], {
@@ -253,45 +231,6 @@ async function addEntry(dir: string, title: string, body = ""): Promise<void> {
 const record = (worktree: string, title: string, body?: string) =>
   addEntry(historyDir(worktree), title, body);
 
-/** One gate command, stopped with all its test workers after GATE_MINUTES, its output streamed to the work item's log. */
-async function gate(
-  worktree: string,
-  name: string,
-  args: string[],
-): Promise<void> {
-  const log = checksLog(worktree);
-
-  await appendFile(
-    log,
-    `\n=== ${name} · ${new Date().toISOString()} · pnpm ${args.join(" ")}\n`,
-  );
-  const out = createWriteStream(log, { flags: "a" });
-  let tail = "";
-  const tools = await toolchain(worktree);
-  // `timeout` signals its whole process group, so vitest's workers stop too; -k kills what ignores SIGTERM.
-  const code = await new Promise<number | null>((done, fail) => {
-    // Gates and the UAT build take turns (scripts/run-uat.sh): together they run the VM out of memory.
-    const child = spawn(
-      "flock",
-      [heavyLock, "timeout", "-k", "30s", `${GATE_MINUTES}m`, "pnpm", ...args],
-      { cwd: worktree, env: { ...inherited, ...tools, ...testEnv } },
-    );
-    const take = (chunk: Buffer) => {
-      out.write(chunk);
-      tail = (tail + chunk.toString()).slice(-4000);
-    };
-    child.stdout.on("data", take);
-    child.stderr.on("data", take);
-    child.on("error", fail);
-    child.on("close", done);
-  });
-  out.end();
-  if (code === 124 || code === 137)
-    throw new Error(
-      `${name} hung: stopped after ${GATE_MINUTES} min. Either a test hung, or the laptop slept while it ran (the VM pauses with it, and the clock jumps on waking); Retry runs it again. The output ends:\n${tail}`,
-    );
-  if (code !== 0) throw new Error(`pnpm ${args[0]} failed:\n${tail}`);
-}
 
 const exists = (path: string) =>
   lstat(path).then(
@@ -410,7 +349,6 @@ async function inspect(worktree: string) {
     throw new Error(
       `Migration/schema change stopped: ${migrations.join(", ")}. Migrations are not made by a task${config.readable.length ? `; they belong in ${config.readable.join(" or ")}` : ""}`,
     );
-  const present = [];
 
   for (const file of before) {
     const stat = await lstat(`${worktree}/${file}`).catch(() => null);
@@ -423,17 +361,8 @@ async function inspect(worktree: string) {
       continue;
     }
 
-    present.push(file);
   }
 
-  // Format before fingerprinting, so formatting never changes approved content (FEEDBACK: e958dab).
-  if (present.length)
-    await run(worktree, `${worktree}/node_modules/.bin/prettier`, [
-      "--write",
-      "--ignore-unknown",
-      "--",
-      ...present,
-    ]);
   const files = await changedFiles(worktree);
   return { files, sensitive: files.filter(isSensitivePath) };
 }
@@ -444,27 +373,9 @@ async function inspect(worktree: string) {
  * both. What ESLint can't fix, it leaves for the lint gate to report; so does a crash, hence the ignored exit code.
  */
 async function autofix(worktree: string): Promise<void> {
-  const files: string[] = [];
-
-  for (const file of await changedFiles(worktree)) {
-    if (
-      /\.([cm]?[jt]sx?|vue)$/.test(file) &&
-      (await exists(`${worktree}/${file}`))
-    ) {
-      files.push(file);
-    }
-  }
-
-  if (!files.length) return;
-
-  await run(
-    worktree,
-    "pnpm",
-    ["exec", "eslint", "--fix", "--no-warn-ignored", "--", ...files],
-    nuxtEnv,
-  ).catch(() => undefined);
-
-  await inspect(worktree);
+  const files = (await Promise.all((await changedFiles(worktree)).map(async f => await exists(`${worktree}/${f}`) ? f : ''))).filter(Boolean);
+  const fixed = await projectCommands(worktree,config.commands.autofix,files);
+  if (!fixed.ok) throw Error(`${fixed.gate}: ${fixed.output}`);
 }
 
 /**
@@ -617,12 +528,15 @@ export async function removeTask(
         `Uncommitted changes in ${workItem}: ${uncommitted.join(", ")}`,
       );
   }
-  await run(client, "workmux", ["remove", "--force", workItem]).catch(
-    (error) => {
-      if (!/not found|no such|does not exist/i.test((error as Error).message))
-        throw error; // already gone is fine
-    },
-  );
+  await sandbox.remove(workItem,true);
+  await sandbox.remove(workItem);
+  if (await exists(worktree)) {
+    // Remove by the trusted registration, not a .git pointer supplied by the project.
+    await taskGitEnv(client,worktree);
+    await rm(worktree,{recursive:true});
+    await run(client,'git',['worktree','prune']);
+  }
+  if (await run(client,'git',['branch','--list',workItem])) await run(client,'git',['branch','-D',workItem]);
 }
 
 /** Closes the issue with a comment, unless it is closed already. */
@@ -663,6 +577,15 @@ async function trustedAuthors(): Promise<string[]> {
       .map((s) => s.trim())
       .filter(Boolean),
   ];
+}
+
+export async function prepareSandbox(item: string, worktree: string) {
+  await checkWorktree(worktree);
+  const existing = (await sandbox.list()).find(s=>s.name === `fx-${item}`);
+  if (!existing) await sandbox.create(item,worktree);
+  else if (existing.workspaces?.length !== 1 || existing.workspaces[0] !== worktree) throw Error('Unexpected sandbox workspace');
+  const setup = await projectCommands(worktree,config.commands.setup);
+  if (!setup.ok) throw Error(`${setup.gate}: ${setup.output}`);
 }
 
 export const realOps: Ops = {
@@ -759,36 +682,16 @@ export const realOps: Ops = {
   async provision(branch, base) {
     // Always branch from GitHub's tip; the local staging checkout is never kept current.
     await run(client, "git", ["fetch", "origin", base]);
-    // workmux's settings for a task worktree, from factory.config.json.
-    const workmuxConfig = `${factoryRoot}/.cache/workmux.agent-task.yaml`;
-    await mkdir(dirname(workmuxConfig), { recursive: true });
-    await writeFile(
-      workmuxConfig,
-      [
-        `main_branch: ${JSON.stringify(config.base)}`,
-        `base_branch: ${JSON.stringify(config.base)}`,
-        `worktree_dir: ${JSON.stringify(worktrees.slice(0, -1))}`,
-        "agent: pi",
-        "",
-      ].join("\n"),
-    );
-    const receipt = JSON.parse(
-      await run(client, "workmux", [
-        "add",
-        branch,
-        "--name",
-        branch,
-        "--config",
-        workmuxConfig,
-        "--headless",
-        "--json",
-        "--base",
-        `origin/${base}`,
-      ]),
-    );
-    if (receipt.branch !== branch) throw new Error("Unexpected workmux branch");
+    if (!/^\d+(?:-[a-z0-9-]+)?$/.test(branch)) throw Error('Invalid task branch');
+    const worktree = `${worktrees}${branch}`;
+    if (await exists(worktree)) {
+      await checkWorktree(worktree);
+      if (await run(worktree,'git',['branch','--show-current']) !== branch || await baseOf(worktree) !== base) throw Error('Unexpected task registration');
+      await prepareSandbox(branch,worktree);
+      return worktree;
+    }
+    await run(client, 'git', ['-c','core.hooksPath=/dev/null','worktree','add','-b',branch,worktree,`origin/${base}`]);
     await run(client, "git", ["config", `branch.${branch}.factoryBase`, base]);
-    const worktree = receipt.worktree_path as string;
     await checkWorktree(worktree);
     await mkdir(`${worktree}/.agents/artefacts`, { recursive: true });
     // A project that keeps AGENTS.md out of its repo (gitignored in the checkout) still gives every task one.
@@ -805,13 +708,7 @@ export const realOps: Ops = {
       });
     }
 
-    // Staging may have gained packages the VM's store lacks; fetch only downloads (no scripts), then the install stays offline.
-    await run(worktree, "pnpm", ["fetch", "--ignore-scripts"]);
-    await run(worktree, "pnpm", ["install", "--offline", "--frozen-lockfile"]);
-    // pnpm records the builds `fetch --ignore-scripts` skipped as pending, and the offline install never runs them:
-    // better-sqlite3 stayed unbuilt and the whole suite failed to start. allowBuilds in pnpm-workspace.yaml still decides.
-    await run(worktree, "pnpm", ["rebuild", "--pending"]);
-    await run(worktree, "pnpm", ["exec", "nuxt", "prepare"], nuxtEnv);
+    await prepareSandbox(branch,worktree);
     return worktree;
   },
 
@@ -870,72 +767,15 @@ export const realOps: Ops = {
   },
 
   async runGates(worktree) {
-    const changedTests = (await changedFiles(worktree)).filter(isTestPath);
-    // tests/e2e runs only under the client's SSR config (a production Nuxt build); `pnpm test` finds no files there.
-    const ssrTests = changedTests.filter((f) => f.startsWith("tests/e2e/"));
-    const tests = changedTests.filter((f) => !ssrTests.includes(f));
+    await checkWorktree(worktree);
     await mkdir(historyDir(worktree), { recursive: true });
-
-    await appendFile(
-      checksLog(worktree),
-      `\n######## Checks · ${new Date().toISOString()}\n`,
-    );
-
-    const gates: Array<[string, string[]]> = [
-      ["install", ["install", "--offline", "--frozen-lockfile"]],
-      ["lint", ["lint"]],
-      ["typecheck", ["typecheck"]],
-      // No `--`: vitest takes the files as filters only when passed straight through; with `--` it runs everything.
-      ...(tests.length
-        ? [["changed tests", ["test", ...tests]] as [string, string[]]]
-        : []),
-      ...(ssrTests.length
-        ? [["changed SSR tests", ["test:ssr", ...ssrTests]] as [string, string[]]]
-        : []),
-      ["full suite", ["test"]],
-    ];
-    // Lint and typecheck both run before any test, and fail together: one coder round fixes both, and tests never
-    // run on code that doesn't build.
-    const failed: Array<[string, string]> = [];
-    const result = () => ({
-      ok: false as const,
-      gate: failed.map(([name]) => name).join(", "),
-      output: failed
-        .map(([name, out]) => `${name}:\n${out.slice(-4000 / failed.length)}`)
-        .join("\n\n"),
-    });
-    let checked = false;
-    for (const [name, args] of gates) {
-      if (failed.length && name !== "typecheck") return result();
-      // The coder's check already passed lint and typecheck on exactly this code: don't run them twice.
-      if (name === "lint") checked = await coderChecked(worktree);
-      if (checked && (name === "lint" || name === "typecheck")) {
-        await appendFile(
-          checksLog(worktree),
-          `\n=== ${name} · skipped: the coder's check passed on this exact code\n`,
-        );
-        continue;
-      }
-      try {
-        if (name === "lint") {
-          if (!(await exists(`${worktree}/.nuxt/eslint.config.mjs`))) {
-            await run(worktree, "pnpm", ["exec", "nuxt", "prepare"], nuxtEnv);
-          }
-
-          await autofix(worktree);
-        }
-
-        await gate(worktree, name, args);
-      } catch (error) {
-        // A hang says nothing about the code: stop the run (it waits as an error) instead of sending it to the coder.
-        if (/hung:/.test((error as Error).message)) throw error;
-        failed.push([name, (error as Error).message]);
-        if (name !== "lint") return result();
-        continue;
-      }
-      await inspect(worktree); // a gate must not introduce a migration or unformatted files
-    }
-    return { ok: true };
+    const log = (text:string) => appendFile(checksLog(worktree),text);
+    await autofix(worktree);
+    const checked = await coderChecked(worktree);
+    if (checked) await log('\nCoder checks passed on this exact tree.\n');
+    const result = await projectCommands(worktree,[...(checked ? [] : config.commands.check),...config.commands.gates],[],log);
+    await inspect(worktree);
+    return result;
   },
 
   async commitAndPush(worktree, message) {

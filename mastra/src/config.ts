@@ -12,6 +12,7 @@ export const factoryRoot =
 
 const SkillName = z.string().regex(/^[a-z0-9-]+$/);
 
+const Command = z.array(z.string()).min(1).refine(argv => !!argv[0], 'missing executable');
 const Config = z.object({
   /** GitHub `owner/name` the issues and PRs live in. */
   repo: z.string().regex(/^[\w.-]+\/[\w.-]+$/),
@@ -24,6 +25,10 @@ const Config = z.object({
   worktrees: z.string(),
   /** Outside the worktree, what agents may read (e.g. the schema repo). */
   readable: z.array(z.string()).default([]),
+  commands: z.object({
+    changedCode: z.array(z.string()).min(1), setup: z.array(Command), autofix: z.array(Command), check: z.array(Command).min(1),
+    gates: z.array(Command).min(1), env: z.record(z.string(),z.string()).default({}),
+  }).strict(),
   sandbox: z.object({
     kit: z.string().min(1).regex(/^[a-zA-Z0-9][a-zA-Z0-9_./:@-]*$/),
     cpus: z.number().int().positive(),
@@ -59,6 +64,7 @@ const at = (path: string) => resolve(workspace, path);
 export const config = {
   repo: raw.repo,
   sandbox: raw.sandbox,
+  commands: raw.commands,
   base: raw.base,
   workspace,
   checkout: at(raw.checkout),

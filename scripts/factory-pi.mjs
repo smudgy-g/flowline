@@ -1,6 +1,6 @@
 import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { execFile, execFileSync } from 'node:child_process'
+import { execFileSync } from 'node:child_process'
 import { basename, dirname, join, matchesGlob, relative, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
@@ -45,9 +45,10 @@ export function authorizeTool(worktree, role, event, readRoots = readable) {
   const local = relative(root, file)
   if (!local || local === '..' || local.startsWith(`..${sep}`) || file.startsWith(`${root}${sep}`) === false)
     return { block: true, reason: 'Outside worktree' }
+  if (local.split(sep).includes('.git')) return { block: true, reason: 'Git metadata is read-only' }
   let parent = file
   while (parent !== root) {
-    if (existsSync(parent) && lstatSync(parent).isSymbolicLink())
+    if (lstatSync(parent, { throwIfNoEntry: false })?.isSymbolicLink())
       return { block: true, reason: 'Symlink in write path' }
     parent = dirname(parent)
   }
@@ -75,40 +76,26 @@ function changedPaths(worktree) {
   ])]
 }
 
-// Runs in the worktree with its own toolchain (mise.toml), as the factory's gates do.
-const sh = (worktree, args, signal) => new Promise(done =>
-  execFile('mise', ['exec', '--', ...args], {
-    cwd: worktree, signal, maxBuffer: 64 * 1024 * 1024, timeout: 15 * 60 * 1000,
-    env: { ...process.env, CI: 'true', NUXT_TELEMETRY_DISABLED: '1' },
-  }, (error, stdout, stderr) => done({ ok: !error, out: `${stdout}${stderr}`.trim() })))
-
 const factoryRoot = resolve(dirname(new URL(import.meta.url).pathname), '..')
-// Gates and the UAT build take turns on this lock (ops.ts): together they run the VM out of memory.
-const heavyLock = `${factoryRoot}/.cache/heavy.lock`
 
 /**
  * The coder's `check`: what the factory's lint and typecheck gates would say, so it fixes them in the same call
  * instead of costing a round. ESLint and Prettier fix what they can first, as the gates' autofix does.
  */
 export async function runCheck(worktree, signal) {
-  const files = changedPaths(worktree).filter(f => /\.([cm]?[jt]sx?|vue)$/.test(f) && existsSync(join(worktree, f)))
-  const lint = files.length
-    ? await sh(worktree, ['pnpm', 'exec', 'eslint', '--fix', '--no-warn-ignored', '--', ...files], signal)
-    : { ok: true, out: '' }
-  if (files.length) await sh(worktree, ['pnpm', 'exec', 'prettier', '--write', '--ignore-unknown', '--', ...files], signal)
-  const types = await sh(worktree, ['flock', heavyLock, 'pnpm', 'typecheck'], signal)
-  const tail = text => text.slice(-6000)
-  // Passed: record the exact code it passed on, so the lint and typecheck gates can skip a repeat (ops.ts runGates).
-  if (lint.ok && types.ok) {
+  signal?.throwIfAborted()
+  const { projectCommands } = await import('../mastra/src/project-commands.ts')
+  const { config } = await import('../mastra/src/config.ts')
+  const files = changedPaths(worktree).filter(f => existsSync(join(worktree, f)))
+  const result = await projectCommands(worktree, [...config.commands.autofix, ...config.commands.check], files)
+  signal?.throwIfAborted()
+  if (result.ok) {
     const tree = execFileSync('bash', [join(factoryRoot, 'scripts/content-tree.sh')], gitOptions(worktree))
     const records = process.env.FACTORY_ITEM_RECORDS
     mkdirSync(records, { recursive: true })
     writeFileSync(join(records, 'checked-tree'), tree.trim())
   }
-  return [
-    lint.ok ? 'lint: passed' : `lint: failed\n${tail(lint.out)}`,
-    types.ok ? 'typecheck: passed' : `typecheck: failed\n${tail(types.out)}`,
-  ].join('\n\n')
+  return result.ok ? 'Project checks passed' : `${result.gate}: failed\n${result.output}`
 }
 
 export async function loadFactoryResources(worktree, role = 'review') {

@@ -5,6 +5,14 @@
   "checkout": "client/staging",
   "worktrees": "client/worktrees",
   "readable": ["supabase/staging"],
+  "commands": {
+    "changedCode": ["**/*.{js,ts,jsx,tsx,mjs,cjs,mts,cts,vue}"],
+    "setup": [["pnpm", "install", "--frozen-lockfile"], ["pnpm", "exec", "nuxt", "prepare"]],
+    "autofix": [["pnpm", "exec", "eslint", "--fix", "--no-warn-ignored", "--", "{changedCode}"], ["pnpm", "exec", "prettier", "--write", "--ignore-unknown", "--", "{changedCode}"]],
+    "check": [["pnpm", "lint"], ["pnpm", "typecheck"]],
+    "gates": [["pnpm", "test"], ["pnpm", "test:ssr"]],
+    "env": {"CI":"true", "NUXT_TELEMETRY_DISABLED":"1", "NUXT_PUBLIC_SUPABASE_URL":"http://127.0.0.1:54321", "NUXT_PUBLIC_SUPABASE_KEY":"test-key", "STUDIO_GITHUB_TOKEN":"test-token"}
+  },
   "sandbox": {
     "kit": "shell",
     "cpus": 2,
