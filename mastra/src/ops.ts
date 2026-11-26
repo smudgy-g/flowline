@@ -15,7 +15,8 @@ import {
   rm,
   writeFile,
 } from "node:fs/promises";
-import { basename, dirname } from "node:path";
+import { z } from "zod";
+import { basename, dirname, join, matchesGlob } from "node:path";
 import { promisify } from "node:util";
 import { config, factoryRoot } from "./config.ts";
 import { sandbox } from './sandbox.ts';
@@ -24,14 +25,9 @@ import { taskGitEnv } from './worktree-git.ts';
 import type { Ops } from "./fast-lane.ts";
 import type { StackOps } from "./stack.ts";
 import {
-  isMigrationPath,
-  isSensitivePath,
-  isTestPath,
-  journeySource,
   replaceSection,
   sha256,
   type Issue,
-  type UatReport,
 } from "./rules.ts";
 
 export { factoryRoot } from "./config.ts";
@@ -41,10 +37,7 @@ const client = config.checkout;
 const worktrees = config.worktrees;
 export const issueRepo = config.repo;
 
-/**
- * This factory's name, when more than one runs (the laptop's VM, the M1's): `~/.config/factory/name` in its VM,
- * which no sync touches. Starting an issue labels it `factory:<name>`, so another factory won't start it too.
- */
+/** A distinct worker name prevents two workers claiming the same issue. */
 export const factoryName = (() => {
   try {
     const name = readFileSync(`${homedir()}/.config/factory/name`, "utf8").trim();
@@ -111,8 +104,8 @@ export async function releaseIssue(number: number): Promise<void> {
   ]);
 }
 
-/** Everything a UAT run reads from the factory repo; run-uat.sh extracts exactly these from one commit. */
-const uatInputs = config.uat.inputs;
+/** Everything an acceptance run reads from the factory repo, extracted from one approved commit. */
+const acceptanceInputs = config.acceptance.inputs;
 
 
 /**
@@ -171,9 +164,8 @@ export const pauseRequests = (): Promise<string[]> =>
 /** A gate that runs longer than this is a hang: a normal full suite takes about 15 minutes. */
 const GATE_MINUTES = 40;
 /**
- * A work item's written history and full check output live in its worktree's `.agents/artefacts/factory/`
- * (gitignored), next to the work they describe. Agents may read them but never write them (factory-pi.mjs).
- * Clean up archives history.md to .data/history/ before the worktree goes; checks.log goes with it.
+ * A work item's written history and check output live on the host, outside the sandbox mount, so code running in a
+ * check cannot rewrite them. Agents get them read-only.
  */
 export const historyDir = (worktree: string) => {
   const item = basename(worktree);
@@ -222,7 +214,7 @@ const exists = (path: string) =>
     () => false,
   );
 
-/** A task worktree must be a real directory under client/worktrees/ with no .env (agents never see real secrets). */
+/** A task worktree must be a real directory under the configured worktrees directory with no .env (agents never see real secrets). */
 async function checkWorktree(worktree: string): Promise<void> {
   if (
     !worktree.startsWith(worktrees) ||
@@ -327,35 +319,14 @@ async function fingerprint(worktree: string): Promise<string> {
 
 async function inspect(worktree: string) {
   await checkWorktree(worktree);
-  const before = await changedFiles(worktree);
-  const migrations = before.filter(isMigrationPath);
-  if (migrations.length)
-    throw new Error(
-      `Migration/schema change stopped: ${migrations.join(", ")}. Migrations are not made by a task${config.readable.length ? `; they belong in ${config.readable.join(" or ")}` : ""}`,
-    );
-
-  for (const file of before) {
-    const stat = await lstat(`${worktree}/${file}`).catch(() => null);
-
-    if (!stat) continue;
-
-    // The coder has no delete tool: emptying a file is how it deletes one.
-    if (stat.isFile() && stat.size === 0 && basename(file) !== ".gitkeep") {
-      await rm(`${worktree}/${file}`);
-      continue;
-    }
-
-  }
-
   const files = await changedFiles(worktree);
-  return { files, sensitive: files.filter(isSensitivePath) };
+  const matches = (file: string, patterns: string[]) => patterns.some(p => matchesGlob(file, p));
+  const blocked = files.filter(file => matches(file, config.paths.protected));
+  if (blocked.length) throw new Error(`Protected paths changed: ${blocked.join(", ")}`);
+  return { files, sensitive: files.filter(file => matches(file, config.paths.sensitive)) };
 }
 
-/**
- * ESLint's own fixes (such as blank lines around multi-line statements) on the task's files, before the lint gate
- * judges them, so a fixable rule never costs the coder a round. Prettier runs again after it, as the gate checks
- * both. What ESLint can't fix, it leaves for the lint gate to report; so does a crash, hence the ignored exit code.
- */
+/** Project formatters and fixers, so a fixable rule never costs the coder a round. */
 async function autofix(worktree: string): Promise<void> {
   const files = (await Promise.all((await changedFiles(worktree)).map(async f => await exists(`${worktree}/${f}`) ? f : ''))).filter(Boolean);
   const fixed = await projectCommands(worktree,config.commands.autofix,files);
@@ -363,18 +334,13 @@ async function autofix(worktree: string): Promise<void> {
 }
 
 /**
- * True when the coder's `check` (factory-pi.mjs) passed on the worktree exactly as it is now: the tree it recorded
- * matches the current one. Agents cannot write the record (it is in the factory's history folder).
+ * True when the coder's `check` (factory-pi.mjs) passed on the worktree exactly as it is now. Agents cannot write
+ * the record: it lives in the factory's own data, outside the sandbox mount.
  */
 async function coderChecked(worktree: string): Promise<boolean> {
-  const recorded = await readFile(
-    `${historyDir(worktree)}/checked-tree`,
-    "utf8",
-  ).catch(() => "");
+  const recorded = await readFile(`${historyDir(worktree)}/checked-tree`, "utf8").catch(() => "");
   if (!recorded) return false;
-  const now = await run(worktree, "bash", [
-    `${factoryRoot}/scripts/content-tree.sh`,
-  ]);
+  const now = await run(worktree, "bash", [`${factoryRoot}/scripts/content-tree.sh`]);
   return recorded.trim() === now;
 }
 
@@ -398,7 +364,7 @@ export async function newerUatInputs(
       baseline,
       head,
       "--",
-      ...uatInputs,
+      ...acceptanceInputs,
     ])
   )
     .split("\n")
@@ -488,7 +454,7 @@ export async function prState(url: string): Promise<string> {
 }
 
 /**
- * Removes a finished or abandoned task: its worktree, tmux window and local branch (`workmux remove`). Uncommitted
+ * Removes a finished or abandoned task: its sandboxes, worktree and local branch. Uncommitted
  * changes stop it unless `discard` is set, since they exist nowhere else. The pushed branch and PR stay on GitHub.
  */
 export async function removeTask(
@@ -651,7 +617,7 @@ export const realOps: Ops = {
         "--full-tree",
         commit,
         "--",
-        ...uatInputs,
+        ...acceptanceInputs,
       ])
     )
       .split("\n")
@@ -659,17 +625,17 @@ export const realOps: Ops = {
       .map((line) => {
         const match = /^100(?:644|755) blob [a-f0-9]+\t(.+)$/.exec(line);
         if (!match)
-          throw new Error(`Unsupported UAT input at ${commit}: ${line}`);
+          throw new Error(`Unsupported acceptance input at ${commit}: ${line}`);
         return match[1];
       });
-    for (const input of uatInputs)
+    for (const input of acceptanceInputs)
       if (!paths.some((p) => p === input || p.startsWith(`${input}/`)))
-        throw new Error(`Missing UAT input at ${commit}: ${input}`);
+        throw new Error(`Missing acceptance input at ${commit}: ${input}`);
     return commit;
   },
 
   async provision(branch, base) {
-    // Always branch from GitHub's tip; the local staging checkout is never kept current.
+    // Always branch from GitHub's tip; the local base checkout is never kept current.
     await run(client, "git", ["fetch", "origin", base]);
     if (!/^\d+(?:-[a-z0-9-]+)?$/.test(branch)) throw Error('Invalid task branch');
     const worktree = `${worktrees}${branch}`;
@@ -716,6 +682,7 @@ export const realOps: Ops = {
         FACTORY_ITEM_RECORDS: historyDir(worktree),
         FACTORY_BASE: `origin/${await baseOf(worktree)}`,
         FACTORY_READABLE: JSON.stringify([...config.readable, historyDir(worktree)]),
+        FACTORY_TEST_PATHS: JSON.stringify(config.paths.tests),
         FACTORY_CODER_SKILLS: JSON.stringify(config.skills.coder),
       },
     );
@@ -809,38 +776,27 @@ export const realOps: Ops = {
     await mkdir(root,{recursive:true});
     const dir = await mkdtemp(`${root}/run-`), inputs = `${dir}/inputs`, scratch = `${dir}/scratch`, source = `${dir}/source`;
     for (const sub of [inputs,scratch,source]) await mkdir(sub);
-    await run(factoryRoot,'git',['archive','-o',`${dir}/inputs.tar`,baseline,'--',...uatInputs]);
+    // The adapter and its fixtures come from the approved factory commit, never from the task branch.
+    await run(factoryRoot,'git',['archive','-o',`${dir}/inputs.tar`,baseline,'--',...config.acceptance.inputs]);
     await run(factoryRoot,'tar',['-xf',`${dir}/inputs.tar`,'-C',inputs]);
     await run(client,'git',['archive','-o',`${source}/project.tar`,commit]);
-    const path = `${dir}/report.json`;
-    let report: UatReport;
-    // Never reuse an offline VM, even after an infrastructure failure.
+    // Never reuse an offline sandbox, even after an infrastructure failure.
     await sandbox.remove(branch,true);
-    await sandbox.create(branch,scratch,true,[inputs,source,config.uat.assets]);
+    await sandbox.create(branch,scratch,true,[inputs,source,...(config.acceptance.assets ? [config.acceptance.assets] : [])]);
     try {
-      const result = await sandbox.exec(branch,config.uat.command,{offline:true,workdir:inputs,timeoutMinutes:60,env:{...config.uat.env,FACTORY_OFFLINE_UAT:'1',INPUTS:inputs,PROJECT_ARCHIVE:`${source}/project.tar`,UAT_ASSETS:config.uat.assets,UAT_REF:branch,UAT_COMMIT:commit}});
+      const result = await sandbox.exec(branch,config.acceptance.command,{offline:true,workdir:inputs,timeoutMinutes:60,
+        env:{...config.acceptance.env,FACTORY_ACCEPTANCE:'1',INPUTS:inputs,PROJECT_ARCHIVE:`${source}/project.tar`,
+          ...(config.acceptance.assets ? {ASSETS:config.acceptance.assets} : {}),REPO:config.repo,REF:branch,COMMIT:commit}});
       if (result.code !== 0) throw Error(`Acceptance adapter failed (${result.code}): ${result.output.slice(-3000)}`);
-      report = JSON.parse(result.stdout ?? result.output);
-      if (report.ref !== branch || report.commit !== commit || typeof report.pass !== 'boolean' || (report.knownFailureOnly !== undefined && typeof report.knownFailureOnly !== 'boolean')) throw Error('Invalid acceptance report');
-      await writeFile(path,JSON.stringify(report));
+      const verdict = z.strictObject({ commit: z.literal(commit), pass: z.boolean(), detail: z.string().min(1) }).parse(JSON.parse(result.stdout ?? result.output));
+      const report = { ref: branch, ...verdict };
+      await writeFile(join(dir,'report.json'),JSON.stringify(report));
+      return { run: dir, report };
     } finally {
       await sandbox.remove(branch,true);
       await rm(scratch,{recursive:true,force:true});
       await rm(source,{recursive:true,force:true});
     }
-    // The planner and coder can't see the run; give them the failed journeys' code from its pinned specs.
-    const specDir = `${dirname(path)}/inputs/specs`;
-    const specs = await Promise.all(
-      (await readdir(specDir).catch(() => []))
-        .filter((f) => f.endsWith(".mjs"))
-        .map((f) => readFile(`${specDir}/${f}`, "utf8")),
-    );
-    for (const journey of report.journeys ?? [])
-      if (journey.status === "failed")
-        journey.source = specs
-          .map((spec) => journeySource(spec, journey.name))
-          .find(Boolean);
-    return { run: dirname(path), report };
   },
 
   async openDraftPr(worktree, title, body) {
@@ -940,7 +896,7 @@ export const realStackOps: StackOps = {
   },
 
   async createSubIssue(parent, title, body, after) {
-    // No `factory` label: a member must not show up on the board as a task anyone could start on staging.
+    // No `factory` label: a member must not show up on the board as a task anyone could start on the base branch.
     const number = issueNumberOf(
       await run(workspace, "gh", [
         "issue",
@@ -1012,8 +968,7 @@ export const realStackOps: StackOps = {
   },
 
   async withReviewCheckout(work) {
-    // A detached checkout of GitHub's staging under client/worktrees/, so runPi's worktree checks hold; never
-    // client/staging itself.
+    // Never use the read-only base checkout for an agent session.
     await run(client, "git", ["fetch", "origin", config.base]);
     const dir = `${worktrees}review-${Date.now()}`;
     await run(client, "git", ["worktree", "add", "--detach", dir, `origin/${config.base}`]);

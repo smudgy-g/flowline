@@ -7,6 +7,7 @@ import { pathToFileURL } from 'node:url'
 // Besides its worktree, a Pi session may read only factory.config.json's `readable` (e.g. migrations, for schema
 // context), which the factory passes as FACTORY_READABLE.
 const readable = JSON.parse(process.env.FACTORY_READABLE ?? '[]')
+const testPaths = JSON.parse(process.env.FACTORY_TEST_PATHS ?? '[]')
 
 // A tool's path as Pi resolves it: a leading '@' is dropped and '~' is the home folder.
 function toolPath(root, path = '.') {
@@ -23,15 +24,13 @@ function realish(file) {
 const inside = (dir, file) => file === dir || file.startsWith(`${dir}${sep}`)
 
 // Shell is deliberately unavailable: shell grammar cannot be reliably guarded by a
-// deny-list, and would permit out-of-worktree writes. The coder's one custom tool,
-// `check`, takes no input and runs fixed commands.
+// deny-list, and would permit out-of-worktree writes.
 // Reads stay in the worktree (and the migrations) so a session never reaches the
 // VM's logins, the factory's UAT specs, or other tasks.
 // `codemode` runs a script whose tool calls come back through this guard one by one (Pi's nested tool calls),
 // and it can call only the role's own tools.
-export function authorizeTool(worktree, role, event, readRoots = readable) {
+export function authorizeTool(worktree, role, event, readRoots = readable, tests = testPaths) {
   if (event.toolName === 'codemode') return undefined
-  if (event.toolName === 'check') return role === 'coder' ? undefined : { block: true, reason: 'Unapproved tool' }
   if (event.toolName === 'bash' || !['read', 'grep', 'find', 'ls', 'edit', 'write'].includes(event.toolName))
     return { block: true, reason: 'Unapproved tool' }
   const root = realpathSync(worktree)
@@ -56,7 +55,7 @@ export function authorizeTool(worktree, role, event, readRoots = readable) {
   const records = ['factory', 'stack'].map(name => join('.agents', 'artefacts', name))
   if (records.some(dir => local === dir || local.startsWith(`${dir}${sep}`)))
     return { block: true, reason: 'Factory history is read-only' }
-  if (role === 'tester' && !/(?:^|\/)(?:tests\/|[^/]+\.(?:spec|test)\.[cm]?[jt]sx?$)/.test(local))
+  if (role === 'tester' && !tests.some(pattern => matchesGlob(local, pattern)))
     return { block: true, reason: 'Tester writes tests only' }
   return undefined
 }
@@ -106,19 +105,10 @@ export async function loadFactoryResources(worktree, role = 'review') {
   const sdk = await import(pathToFileURL(join(dist, 'index.js')).href)
   // As the pi CLI does at start-up: honour HTTPS_PROXY (the factory VM's egress proxy). No-op without one.
   ;(await import(pathToFileURL(join(dist, 'core/http-dispatcher.js')).href)).configureHttpDispatcher()
-  const { Type } = await import(pathToFileURL(join(install, 'releases', version, 'node_modules/typebox/build/index.mjs')).href)
   const loader = new sdk.DefaultResourceLoader({
     cwd: worktree, agentDir: sdk.getAgentDir(), noExtensions: true,
     extensionFactories: [sdk.createCodemodeExtension({ models: false }), (pi) => {
       pi.on('tool_call', (event) => authorizeTool(worktree, role, event))
-      if (role === 'coder') pi.registerTool({
-        name: 'check', label: 'Check',
-        description: "Lint (auto-fixing what it can) and typecheck the worktree, as the factory's gates will. Takes a minute or two.",
-        parameters: Type.Object({}),
-        async execute(_id, _params, signal) {
-          return { content: [{ type: 'text', text: await runCheck(worktree, signal) }], details: {} }
-        },
-      })
     }],
   })
   await loader.reload()
@@ -195,7 +185,7 @@ async function main() {
     // Paths the prompt names (e.g. the plan's step), so a step gets its area's skills before it touches the file.
     const planned = prompt.match(/[\w@.()[\]-]+(?:\/[\w@.()[\]-]+)+/g) ?? []
     const skills = requireSkills(loader, [...new Set([...named, ...coderSkills([...paths, ...planned])])])
-    instruction = withSkills(skills, "Follow AGENTS.md's testing rules.\nTo delete a file, write it empty: the factory removes empty files.\n\n")
+    instruction = withSkills(skills, "Follow AGENTS.md's testing rules.\n\n")
   }
   const runtime = await sdk.ModelRuntime.create()
   const key = existsSync(fallbackKeyFile) ? readFileSync(fallbackKeyFile, 'utf8').trim() : ''
@@ -210,7 +200,7 @@ async function main() {
   const { session } = await sdk.createAgentSession({
     cwd: worktree, model, modelRuntime: runtime, resourceLoader: loader,
     tools: role === 'review' || role === 'planner' ? ['read', 'grep', 'find', 'ls', 'codemode']
-      : ['read', 'grep', 'find', 'ls', 'edit', 'write', 'codemode', ...(role === 'coder' ? ['check'] : [])],
+      : ['read', 'grep', 'find', 'ls', 'edit', 'write', 'codemode'],
     sessionManager: sdk.SessionManager.inMemory(),
   })
   const timer = setTimeout(() => { void session.abort() }, 30 * 60 * 1000)

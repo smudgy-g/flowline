@@ -17,33 +17,12 @@ export type Finding = {
   line: number;
   description: string;
 };
-export type UatReport = {
-  ref: string;
-  commit: string;
-  pass: boolean;
-  knownFailureOnly?: boolean;
-  failure?: "infrastructure" | "build";
-  error?: string;
-  journeys?: Array<{
-    name: string;
-    status: string;
-    reason: string | null;
-    /** The failed journey's code, from the run's pinned specs: what it actually clicks and fills. */
-    source?: string;
-  }>;
-  lighthouse?: Array<{
-    path: string;
-    accessibility: number | null;
-    seo: number | null;
-    passed: boolean;
-  }>;
-  knownFailureNowPassing?: string[];
-};
+export type UatReport = { ref: string; commit: string; pass: boolean; detail: string };
 
 export const sha256 = (text: string) =>
   createHash("sha256").update(text).digest("hex");
 
-/** Branch and worktree name for an issue: `<number>-<title slug>`, within workmux's 48-character branch rule. */
+/** Branch and worktree name for an issue: `<number>-<title slug>`, at most about 30 characters. */
 /** Words that carry no meaning in a short name. */
 const FILLER = new Set(
   "a an the and or of to in on at by for from with into is are be can when".split(
@@ -79,17 +58,6 @@ export function workItemName(issue: { number: number; title: string }): string {
 
   return name;
 }
-
-/** Schema migrations: made outside the factory (see factory.config.json `readable`), never by a task. */
-export const isMigrationPath = (file: string) =>
-  /(^|\/)(migrations?|database(-generated)?\.types\.ts)(\/|$)/i.test(file);
-/** Dependency, customer-data and integration files: listed separately at the outcome gate so the human reads them. */
-export const isSensitivePath = (file: string) =>
-  /(^|\/)(package\.json|pnpm-lock\.yaml|.*customer.*|.*integration.*)|^server\/services\//i.test(
-    file,
-  );
-export const isTestPath = (file: string) =>
-  /(?:^|\/)[^/]+\.(?:spec|test)\.[cm]?[jt]sx?$/.test(file);
 
 /** The plan's numbered steps ("1. ...", each with the lines under it). Fewer than two: the plan is one step. */
 export function planSteps(summary: string): string[] {
@@ -210,8 +178,8 @@ export function coderPrompt(
     feedback && `## Fix this first\n${feedback}`,
     `## Issue\n${issue.body}`,
     step
-      ? `## This call: step ${step.index + 1} of ${step.total} only\n${step.text}\n\nEarlier steps are already in the worktree; read them, don't redo them. Part of this step may be there too; finish what is missing. Leave later steps to later calls. Write this step's tests from the list above. When this step's code is written, call the \`check\` tool and fix what it reports in the files you changed, then call it again until it passes (an error only a later step can fix may stay; say which). You can't run tests; the factory runs them after the last step. Stop when this step is done, or when you are blocked; then say which, and why.`
-      : "## When you are done\nThe worktree may already hold part of this plan. Check every numbered plan step and every listed test against the files, and finish whatever is missing before you stop. Then call the `check` tool and fix what it reports, until it passes. You can't run tests; the factory runs them afterwards. Stop only when the whole plan is in the code, or when you are blocked; then say which, and why. A step too big to finish here can wait: each step you name as unfinished gets its own call next.\n\nEnd your reply with one line naming the plan steps not fully in the code, such as `Unfinished steps: 3, 6`, or `Unfinished steps: none`.",
+      ? `## This call: step ${step.index + 1} of ${step.total} only\n${step.text}\n\nEarlier steps are already in the worktree; read them, don't redo them. Part of this step may be there too; finish what is missing. Leave later steps to later calls. Write this step's tests from the list above. You can't run tests; the factory runs them after the last step. Stop when this step is done, or when you are blocked; then say which, and why.`
+      : "## When you are done\nThe worktree may already hold part of this plan. Check every numbered plan step and every listed test against the files, and finish whatever is missing before you stop. You can't run tests; the factory runs them afterwards. Stop only when the whole plan is in the code, or when you are blocked; then say which, and why. A step too big to finish here can wait: each step you name as unfinished gets its own call next.\n\nEnd your reply with one line naming the plan steps not fully in the code, such as `Unfinished steps: 3, 6`, or `Unfinished steps: none`.",
   ]
     .filter(Boolean)
     .join("\n\n");
@@ -245,7 +213,7 @@ export function reviewPrompt(
     !skill &&
       "Also review for over-engineering with /skill:ponytail-review: each thing to cut or simplify is a low finding saying what replaces it, unless it hides a bug.",
     "Judge the change against the plan. Critical and high are for defects in what the plan asks for: it breaks, loses or leaks data, or a step is missing. Anything the plan does not ask for (a new feature, limit, quota, hardening or work in another repository) is at most medium, as a follow-up.",
-    "The coder can only lint and typecheck; it can't run tests or the app. Checking the built app in a browser (navigation, refresh, real data) is UAT's job after your review, so a check only a running app can do is never a finding.",
+    "The coder cannot run commands. Black-box acceptance checks run after review, so a check only a running app can do is never a finding.",
     'End your reply with exactly one ```json block: {"findings":[{"severity":"critical|high|medium|low","file":"path","line":1,"description":"..."}]} (an empty array when there are none).',
   ]
     .filter(Boolean)
@@ -288,52 +256,6 @@ export const describeFindings = (findings: Finding[]) =>
     .map((f) => `- ${f.severity} ${f.file}:${f.line}: ${f.description}`)
     .join("\n");
 
-/** passed: journeys and gates green (or only known failures). client: the change broke something. infrastructure: UAT never judged it. */
-export function uatOutcome(
-  report: UatReport,
-): "passed" | "client" | "infrastructure" {
-  if (report.pass || report.knownFailureOnly) return "passed";
-  if (report.failure === "build") return "client";
-  // No journey ran, or Lighthouse produced no score: UAT itself broke, so this says nothing about the change.
-  const ranNothing =
-    !report.journeys?.length ||
-    report.lighthouse?.some((l) => l.accessibility === null || l.seo === null);
-  return report.failure === "infrastructure" || ranNothing
-    ? "infrastructure"
-    : "client";
-}
-
-export function describeUatFailure(report: UatReport): string {
-  if (report.failure === "build")
-    return `UAT production build failed for ${report.commit}.`;
-  const journeys = (report.journeys ?? [])
-    .filter((j) => j.status === "failed")
-    .map(
-      (j) =>
-        `- journey "${j.name}": ${j.reason ?? "failed"}${j.source ? `\n  The journey (human-owned, read-only):\n\`\`\`js\n${j.source}\n\`\`\`` : ""}`,
-    );
-  const gates = (report.lighthouse ?? [])
-    .filter((g) => !g.passed)
-    .map(
-      (g) =>
-        `- Lighthouse ${g.path}: accessibility ${g.accessibility}, SEO ${g.seo}`,
-    );
-  return [`UAT failed for ${report.commit}:`, ...journeys, ...gates].join("\n");
-}
-
-/** One journey's `test(...)` block from a spec file, or undefined when the file has no journey by that name. */
-export function journeySource(spec: string, name: string): string | undefined {
-  const start = [`test('${name}'`, `test("${name}"`, `test(\`${name}\``]
-    .map((head) => spec.indexOf(head))
-    .find((i) => i >= 0);
-  if (start === undefined) return undefined;
-  const next = spec.slice(start + 1).search(/\ntest[(.]/);
-  return spec
-    .slice(start, next < 0 ? undefined : start + 1 + next)
-    .trim()
-    .slice(0, 4000);
-}
-
 export function draftPrBody(args: {
   issue: Issue;
   plan: Plan;
@@ -345,11 +267,8 @@ export function draftPrBody(args: {
   return [
     `## Summary\n${args.plan.summary}`,
     `## Why\nRefs #${args.issue.number}: ${args.issue.title}`,
-    `## Verification\n- UAT: ${report.pass ? "pass" : "known failure only"} (run ${args.uatRun}, commit ${report.commit})\n${(report.lighthouse ?? []).map((g) => `- Lighthouse ${g.path}: accessibility ${g.accessibility}, SEO ${g.seo}`).join("\n")}`,
+    `## Verification\n- Acceptance: ${report.pass ? "pass" : "fail"} (run ${args.uatRun}, commit ${report.commit})\n${report.detail}`,
     `## Low review notes\n${args.lowNotes.join("\n") || "None"}`,
-    ...(report.knownFailureNowPassing ?? []).map(
-      (item) => `${item} — human: remove the entry in a factory commit.`,
-    ),
     "Human review required; no auto-merge.",
   ].join("\n\n");
 }
@@ -469,7 +388,7 @@ export function designReviewPrompt(
 ): string {
   return [
     `Review the technical design and PR list for the stacked feature #${issue.number}: ${issue.title} with /skill:${skill}, before any PR starts.`,
-    "Read-only. The checkout is current staging; read the code the design touches before judging it.",
+    "Read-only. The checkout is the current base branch; read the code the design touches before judging it.",
     `## Issue\n${issue.body}`,
     `## The design (one for every PR)\n${design}`,
     `## PRs in order\n${members.map((m, i) => `${i + 1}. ${m.title}${m.byHand ? " (by hand)" : ""}`).join("\n")}`,

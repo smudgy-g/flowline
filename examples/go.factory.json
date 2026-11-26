@@ -1,0 +1,34 @@
+{
+  "repo": "example/service",
+  "base": "main",
+  "workspace": "..",
+  "checkout": "service/main",
+  "worktrees": "service/worktrees",
+  "paths": { "tests": ["**/*_test.go"], "sensitive": ["go.mod", "go.sum"] },
+  "sandbox": {
+    "kit": "ghcr.io/example/go-factory-kit:1",
+    "cpus": 4,
+    "memory": "4g",
+    "allowlist": ["proxy.golang.org", "sum.golang.org"],
+    "maxConcurrent": 2
+  },
+  "commands": {
+    "changedCode": ["**/*.go"],
+    "setup": [["go", "mod", "download"]],
+    "autofix": [["gofmt", "-w", "--", "{changedCode}"]],
+    "check": [["go", "vet", "./..."]],
+    "gates": [["go", "test", "./..."]],
+    "env": { "CI": "true", "GOFLAGS": "-mod=readonly" }
+  },
+  "acceptance": {
+    "inputs": ["acceptance"],
+    "command": ["bash", "acceptance/run.sh"],
+    "assets": ".cache/acceptance-assets",
+    "env": {}
+  },
+  "skills": {
+    "packs": ["skills/core"],
+    "coder": { "always": ["ponytail"] },
+    "codeReviewers": ["architect"]
+  }
+}

@@ -32,7 +32,7 @@ export function createFactory(ops: Ops, databaseUrl: string, apiRoutes: ApiRoute
     storage: observability ? new MastraCompositeStore({ id: 'factory', default: runs, domains: { observability } }) : runs,
     // Only the laptop's board tunnels may call the API from a browser: this factory's (4111) and a second
     // factory's (4112), whose cards the board merges in. Mastra's default lets any web page call it.
-    server: { apiRoutes, cors: { origin: BOARD_ORIGINS } },
+    server: { host: '127.0.0.1', apiRoutes, cors: { origin: BOARD_ORIGINS } },
     ...(observability && {
       logger: new PinoLogger({ name: 'factory', level: 'info' }),
       observability: new Observability({

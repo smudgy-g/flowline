@@ -1,4 +1,5 @@
 // Drives a whole stack with fake GitHub: design gate, sub-issues, a by-hand member, fast-lane members, the stack PR.
+import './workflow-profile.ts'
 import assert from 'node:assert/strict'
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'

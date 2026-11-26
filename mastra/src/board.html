@@ -7,7 +7,7 @@
       rel="icon"
       href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧟‍♂️</text></svg>"
     />
-    <title>Frankenstein</title>
+    <title>{{repo}} · Factory board</title>
     <!-- The board (board.ts serves it and its data). Studio, for looking inside a run, is at /. -->
     <style>
       :root {
@@ -541,7 +541,8 @@
   </head>
   <body>
     <header>
-      <h1>Frankenstein</h1>
+      <h1>Factory board</h1>
+      <span>{{repo}} → <code>{{base}}</code></span>
       <span id="factories" class="muted"></span>
       <span id="counts"></span>
       <span class="right"><span id="updated"></span></span>
@@ -570,7 +571,7 @@
           order.</span
         >
         <button class="btn" id="pause-all" onclick="pauseAll()">Pause all</button>
-        <span id="pause-info">Runs finish the step they're on, then wait. Good before a sync.</span>
+        <span id="pause-info">Runs finish the step they're on, then wait.</span>
         <a href="/workflows/fastLane" style="margin-top: auto">Studio</a>
       </nav>
       <div class="board" id="board"></div>
@@ -624,7 +625,7 @@
         Date.now() - c.since > OVERDUE_MIN * 60000;
       const isTest = (f) =>
         /(?:^|\/)[^/]+\.(?:spec|test)\.[cm]?[jt]sx?$/.test(f);
-      // Factories this board shows: its own, plus any others tunnelled to the laptop (`?peers=monster:4112`, remembered).
+      // Factories this board shows: its own, plus any others tunnelled to the laptop (`?peers=worker2:4112`, remembered).
       // Each card keeps where it came from (`at`), so its buttons go back to that factory.
       const peers = (() => {
         const asked = new URLSearchParams(location.search).get("peers");
@@ -643,7 +644,7 @@
           .filter(Boolean)
           .map(([, name, port]) => ({ at: `http://localhost:${port}`, name })),
       ];
-      let cards = [],
+      let projectWorkers = [], cards = [],
         openId = null,
         allPaused = false,
         shown = "";
@@ -654,11 +655,12 @@
             factories.map((f) =>
               fetch(`${f.at}/board/data`)
                 .then((r) => r.json())
-                .then((data) => ({ f, data }))
+                .then((data) => ({ f, data: data.repo === "{{repo}}" && data.base === "{{base}}" ? data : null }))
                 .catch(() => ({ f, data: null })),
             ),
           );
           const up = results.filter((r) => r.data);
+          projectWorkers = up.map(({ f }) => f);
           if (!up.length) throw new Error("no factory answered");
           const many = factories.length > 1;
           const runs = [],
@@ -690,9 +692,8 @@
             : "Pause all";
           document.getElementById("pause-info").textContent = allPaused
             ? "Everything is paused: runs stop before their next step."
-            : "Runs finish the step they're on, then wait. Good before a sync.";
-          // Which factories are behind the board (the doctor on this laptop, the monster on the M1); one that
-          // doesn't answer is struck through.
+            : "Runs finish the step they're on, then wait.";
+          // Strike through unavailable peers or peers targeting a different project.
           document.getElementById("factories").innerHTML = results
             .map((r) =>
               r.data
@@ -705,7 +706,7 @@
             ...up
               .filter((r) => r.data.issuesError)
               .map((r) => `Couldn't list GitHub issues (${esc(r.data.factory)}): ${esc(r.data.issuesError)}`),
-            ...down.map((n) => `Can't reach the ${esc(n)} factory: is its tunnel open?`),
+            ...down.map((n) => `Can't reach the ${esc(n)} factory: check its tunnel and project configuration.`),
           ]
             .map((m) => `<div class="notice">${m}</div>`)
             .join("");
@@ -890,7 +891,7 @@
           ];
         if (c.kind === "running")
           return [
-            `${overdue(c) ? `<div class="why red"><b>This is taking much longer than usual.</b> If the laptop slept, the VM paused with it and this will carry on by itself; otherwise the output below shows where it's stuck. Tests are stopped after 40 min.</div>` : ""}
+            `${overdue(c) ? `<div class="why red"><b>This is taking much longer than usual.</b> Check the worker and the latest output below. Tests are stopped after 40 min.</div>` : ""}
      <div class="why blue">${esc(c.status)} for ${esc(ago(c.since))}. Nothing for you to do yet; the card moves when it's done.${c.lane?.cycles ? `\nBuild round ${c.lane.cycles}.` : ""}</div>
      ${c.column === "Tests" ? `<h3>Live output</h3><pre class="diff" id="log" style="max-height:340px;overflow-y:auto;border:1px solid var(--line);border-radius:6px"></pre>` : ""}
      ${historyBlock(c)}${stepsBlock(c)}${coderBlock(c)}${planBlock(c.lane?.plan)}${issueBlock(c)}`,
@@ -933,7 +934,7 @@
           return [
             `<div class="ask">The change is built, tested and reviewed. <b>Read the diff and approve it</b>, or send it back with what's wrong. Approving pushes the branch and runs UAT.</div>
        <div class="checks"><span>Lint</span><span>Type check</span><span>Changed tests</span><span>Full test suite</span><span>Review: ${notes.length ? `${notes.length} note${notes.length > 1 ? "s" : ""}` : "no findings"}</span></div>
-       ${sensitive.length ? `<div class="why"><b>${sensitive.length} sensitive file${sensitive.length > 1 ? "s" : ""}</b> (dependencies, customer data, integrations or server services). Read ${sensitive.length > 1 ? "these" : "this one"} closely.</div>` : ""}
+       ${sensitive.length ? `<div class="why"><b>${sensitive.length} sensitive file${sensitive.length > 1 ? "s" : ""}</b> matched the project's sensitive-path rules. Read ${sensitive.length > 1 ? "these" : "this one"} closely.</div>` : ""}
        ${notes.length ? `<h3>Review notes (medium and low, not blocking: send it back if one matters)</h3><ul>${notes.map((n) => `<li>${esc(n)}</li>`).join("")}</ul>` : ""}
        <h3>Changed files · build round ${c.lane?.cycles ?? "?"}</h3>
        <ul class="files">${files.map((f) => `<li id="stat-${esc(f)}"><span>${esc(f)}</span>${sensitive.includes(f) ? '<span class="tag">sensitive</span>' : isTest(f) ? '<span class="tag test">test</span>' : ""}</li>`).join("")}</ul>
@@ -1006,7 +1007,7 @@
         const btn = document.getElementById("pause-all");
         btn.disabled = true;
         await Promise.all(
-          factories.map((f) =>
+          projectWorkers.map((f) =>
             fetch(`${f.at}/board/pause/all`, {
               method: "POST",
               headers: { "content-type": "application/json" },

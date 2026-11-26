@@ -1,0 +1,18 @@
+name: Factory task
+description: Deliver a reviewed change as a draft PR.
+labels: [factory]
+body:
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Outcome
+      description: Describe the desired result, boundaries and acceptance criteria.
+    validations:
+      required: true
+  - type: dropdown
+    id: lane
+    attributes:
+      label: Lane
+      options: [fast lane, standard]
+    validations:
+      required: true

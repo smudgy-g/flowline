@@ -21,11 +21,9 @@ import {
   parseUnfinished,
   planSteps,
   describeFindings,
-  describeUatFailure,
   draftPrBody,
   parseFindings,
   reviewPrompt,
-  uatOutcome,
   workItemName,
   laneOf,
   parseProposedPrs,
@@ -949,28 +947,23 @@ export function createFastLane(ops: Ops) {
     if ((await ops.pushedHead(state.worktree)) !== state.pushedSha)
       throw new Error("Task branch moved since it was pushed");
     const { run, report } = await ops.runUat(state.workItem, state.baseline);
-    const verdict = uatOutcome(report);
-    if (verdict === "infrastructure")
-      throw new Error(
-        `UAT never reached a verdict (${report.error ?? "no journey ran, or Lighthouse gave no score"}); run ${run}`,
-      );
     if (report.commit !== state.pushedSha)
       throw new Error(
         `UAT tested ${report.commit}, expected ${state.pushedSha}`,
       );
     await ops.record(
       state.worktree,
-      `UAT ${verdict === "passed" ? "passed" : "failed"} (run ${run})`,
-      verdict === "client" ? describeUatFailure(report) : "",
+      `UAT ${report.pass ? "passed" : "failed"} (run ${run})`,
+      report.pass ? "" : report.detail,
     );
 
     await setState({
       ...state,
       uatRun: run,
       uatReport: report,
-      feedback: verdict === "client" ? describeUatFailure(report) : "",
+      feedback: report.pass ? "" : report.detail,
     });
-    return { uatPassed: verdict === "passed" };
+    return { uatPassed: report.pass };
   });
 
   const delivery = createWorkflow({

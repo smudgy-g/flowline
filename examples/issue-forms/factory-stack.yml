@@ -1,0 +1,24 @@
+name: Factory stack
+description: Deliver a feature in ordered PRs.
+labels: [factory-stack]
+body:
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Outcome
+    validations:
+      required: true
+  - type: textarea
+    id: members
+    attributes:
+      label: PRs in order
+      description: One numbered line per PR. Mark manual members (by hand).
+    validations:
+      required: true
+  - type: dropdown
+    id: lane
+    attributes:
+      label: Lane
+      options: [fast lane, standard]
+    validations:
+      required: true

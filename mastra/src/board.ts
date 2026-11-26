@@ -1,5 +1,5 @@
 // The board: every run as a card in the column of the stage it is at, with what it needs from you.
-// Served by `mastra dev` at http://localhost:4111/board (the page is board.html); `factory-ui` opens it.
+// Served by `mastra dev` at http://localhost:4111/board (the page is board.html).
 //
 // Every action carries the token of the wait it was shown, so a click only applies to what was on screen.
 // Like `fx approve`, this guards against mistakes, not against an agent with a shell in the VM (README.md).
@@ -370,7 +370,6 @@ export function boardRoutes(factory: () => Factory) {
     return issue;
   };
 
-
   return [
     registerApiRoute("/board", {
       method: "GET",
@@ -449,6 +448,8 @@ export function boardRoutes(factory: () => Factory) {
           }));
         return c.json({
           factory: factoryName,
+          repo: config.repo,
+          base: config.base,
           columns: COLUMNS,
           cards: [...waiting, ...cards],
           allPaused,

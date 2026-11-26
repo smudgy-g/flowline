@@ -8,13 +8,8 @@ import {
   replaceSection,
   blockingFindings,
   type Finding,
-  describeUatFailure,
-  isMigrationPath,
-  journeySource,
   planSteps,
-  isSensitivePath,
   parseFindings,
-  uatOutcome,
   workItemName,
 } from "../src/rules.ts";
 
@@ -60,56 +55,6 @@ test("reviewer findings come from the last json block, or not at all", () => {
   );
 });
 
-test("path policy and UAT verdicts", () => {
-  assert.ok(
-    isMigrationPath("supabase/migrations/1_x.sql") &&
-      isMigrationPath("shared/types/supabase/database-generated.types.ts"),
-  );
-  assert.ok(
-    isSensitivePath("package.json") &&
-      isSensitivePath("server/services/x.ts") &&
-      !isSensitivePath("server/api/x.ts"),
-  );
-  assert.equal(
-    uatOutcome({ ref: "b", commit: "c", pass: false, knownFailureOnly: true }),
-    "passed",
-  );
-  assert.equal(
-    uatOutcome({
-      ref: "b",
-      commit: "c",
-      pass: false,
-      failure: "infrastructure",
-    }),
-    "infrastructure",
-  );
-  assert.equal(
-    uatOutcome({ ref: "b", commit: "c", pass: false, failure: "build" }),
-    "client",
-  );
-  const journey = { name: "j", status: "failed", reason: "timeout" };
-  assert.equal(
-    uatOutcome({ ref: "b", commit: "c", pass: false, journeys: [journey] }),
-    "client",
-  );
-  assert.equal(
-    uatOutcome({ ref: "b", commit: "c", pass: false, journeys: [] }),
-    "infrastructure",
-  );
-  assert.equal(
-    uatOutcome({
-      ref: "b",
-      commit: "c",
-      pass: false,
-      journeys: [journey],
-      lighthouse: [
-        { path: "/", accessibility: null, seo: null, passed: false },
-      ],
-    }),
-    "infrastructure",
-  );
-});
-
 test("parseStack reads the Factory stack form", async () => {
   const { parseStack, formSection } = await import("../src/rules.ts");
   const body =
@@ -150,16 +95,6 @@ test("only critical and high findings block", () => {
     ).map((f) => f.severity),
     ["critical", "high"],
   );
-});
-
-test("a failed journey's code goes into the UAT failure, up to the next journey", () => {
-  const spec = "import x\n\ntest('customer inquiry', async ({ page }) => {\n  await page.goto('/a')\n})\n\ntest('other', () => {})\n";
-  const source = journeySource(spec, "customer inquiry");
-  assert.equal(source, "test('customer inquiry', async ({ page }) => {\n  await page.goto('/a')\n})");
-  assert.equal(journeySource(spec, "missing"), undefined);
-  assert.equal(journeySource(spec, "other"), "test('other', () => {})");
-  const text = describeUatFailure({ ref: "b", commit: "c", pass: false, journeys: [{ name: "customer inquiry", status: "failed", reason: "timeout", source }] });
-  assert.ok(text.includes("page.goto('/a')"));
 });
 
 test('standard lane rules: lane, proposed PRs, section replace', () => {
