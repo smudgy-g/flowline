@@ -16,16 +16,16 @@ function fakes() {
   const calls: string[] = []
   const history: string[] = []
   const designs: string[] = []
-  const open = new Set<number>()
+  const open = new Set<string>()
   let next = 1424
-  const splits = new Map<number, string[]>()
+  const splits = new Map<string, string[]>()
   let reviewReply = (_prompt: string) => '```json\n{"findings":[]}\n```'
   const stackOps: StackOps = {
     paused: async () => false,
     readIssue: async number => ({ number, title: 'Import offers', body: parentBody, url: 'u', author: 'adam', comments: ['## Draft design'] }),
     claim: async n => { history.push(`claimed #${n}`) },
     createStackBranch: async branch => { calls.push(`branch ${branch}`) },
-    createSubIssue: async (parent, title, _body, after) => { const n = next++; open.add(n); calls.push(`sub #${n} of #${parent}: ${title}${after ? ` after #${after}` : ''}`); return n },
+    createSubIssue: async (parent, title, _body, after) => { const n = String(next++); open.add(n); calls.push(`sub #${n} of #${parent}: ${title}${after ? ` after #${after}` : ''}`); return n },
     retitleIssue: async (n, title) => { calls.push(`retitle #${n}: ${title}`) },
     updateIssueSection: async (n, name, text) => { calls.push(`#${n} ${name}: ${text.replace(/\n/g, ' / ')}`) },
     withReviewCheckout: async work => work(async prompt => reviewReply(prompt)),
@@ -45,9 +45,9 @@ test('stack: design gate, sub-issues once, by-hand member, members in order on t
   const { calls, history, designs, open, stackOps, ops } = fakes()
   const db = `file:${join(mkdtempSync(join(tmpdir(), 'fx-')), 'factory.db')}`
   const fx = () => createFactory(ops, db, [], stackOps)
-  const id = runIdFor(1423)
+  const id = runIdFor("1423")
 
-  let v = await startStack(fx(), 1423)
+  let v = await startStack(fx(), "1423")
   assert.equal(v.workflow, 'stack')
   assert.equal(v.waiting?.kind, 'design')
   assert.equal(v.waiting?.draft, '## Draft design')
@@ -65,7 +65,7 @@ test('stack: design gate, sub-issues once, by-hand member, members in order on t
   assert.deepEqual(calls.slice(0, 4), ['branch stack/1423-import-offers', 'sub #1424 of #1423: 1/3 Database', 'sub #1425 of #1423: 2/3 Read offers', 'sub #1426 of #1423: 3/3 Review them'])
   assert.equal((await stackState(fx(), id))?.design, 'Tables X and Y; shape Z')
   assert.equal(v.waiting?.kind, 'by-hand')
-  assert.equal(v.waiting?.number, 1424)
+  assert.equal(v.waiting?.number, "1424")
 
   // A retry re-runs the step without creating sub-issues again.
   v = await resume(fx(), id, { retry: true })
@@ -76,21 +76,21 @@ test('stack: design gate, sub-issues once, by-hand member, members in order on t
   v = await resume(fx(), id, { approve: true })
   assert.ok(calls.includes('close #1424: Done by hand.'))
   assert.equal(v.waiting?.kind, 'member-running')
-  assert.equal(v.waiting?.number, 1425)
-  assert.equal((await view(fx(), runIdFor(1425)))?.waiting?.kind, 'plan')
-  assert.equal((await laneState(fx(), runIdFor(1425)))?.base, 'stack/1423-import-offers')
+  assert.equal(v.waiting?.number, "1425")
+  assert.equal((await view(fx(), runIdFor("1425")))?.waiting?.kind, 'plan')
+  assert.equal((await laneState(fx(), runIdFor("1425")))?.base, 'stack/1423-import-offers')
   assert.deepEqual(pick(await card(fx(), id)), { column: 'Stacks', kind: 'running', status: 'PR 2 of 3: #1425' })
-  assert.deepEqual(pick(await card(fx(), runIdFor(1425))), { column: 'Plan', kind: 'needs', status: 'Agree a plan' })
+  assert.deepEqual(pick(await card(fx(), runIdFor("1425"))), { column: 'Plan', kind: 'needs', status: 'Agree a plan' })
 
   // Checking again while it runs changes nothing; once its issue is closed (cleaned up), member 3 starts.
   v = await resume(fx(), id, { retry: true })
-  assert.equal(v.waiting?.number, 1425)
-  open.delete(1425)
+  assert.equal(v.waiting?.number, "1425")
+  open.delete("1425")
   v = await resume(fx(), id, { retry: true })
-  assert.equal(v.waiting?.number, 1426)
+  assert.equal(v.waiting?.number, "1426")
   assert.equal((await stackState(fx(), id))?.current, 2)
 
-  open.delete(1426)
+  open.delete("1426")
   v = await resume(fx(), id, { retry: true })
   assert.equal(v.status, 'success')
   assert.equal(v.prUrl, 'https://github.com/x/pull/9')
@@ -101,7 +101,7 @@ test('stack: design gate, sub-issues once, by-hand member, members in order on t
   assert.deepEqual(history, [
     'claimed #1423',
     'You sent the design back', 'You approved the design',
-    'Sub-issue #1424 created', 'Sub-issue #1425 created', 'Sub-issue #1426 created',
+    'Sub-item 1424 created', 'Sub-item 1425 created', 'Sub-item 1426 created',
     'PR 1 of 3 finished',
     'PR 2 of 3 started', 'PR 2 of 3 finished',
     'PR 3 of 3 started', 'PR 3 of 3 finished',
@@ -113,7 +113,7 @@ test('stack: a body without a PR list, or another lane, stops at intake', async 
   const { stackOps, ops } = fakes()
   stackOps.readIssue = async number => ({ number, title: 'T', body: '### PRs in order\n\n1. A\n\n### Lane\n\nslow lane', url: 'u', author: 'adam', comments: [] })
   const db = `file:${join(mkdtempSync(join(tmpdir(), 'fx-')), 'factory.db')}`
-  const v = await startStack(createFactory(ops, db, [], stackOps), 5)
+  const v = await startStack(createFactory(ops, db, [], stackOps), "5")
   assert.equal(v.waiting?.kind, 'error')
   assert.match(v.waiting!.message, /use fast lane or standard/)
 })
@@ -126,9 +126,9 @@ test('standard stack: design reviewed, proposed PR list approved, a member split
     : '```json\n{"findings":[]}\n```')
   const db = `file:${join(mkdtempSync(join(tmpdir(), 'fx-')), 'factory.db')}`
   const fx = () => createFactory(ops, db, [], stackOps)
-  const id = runIdFor(1423)
+  const id = runIdFor("1423")
 
-  await startStack(fx(), 1423)
+  await startStack(fx(), "1423")
   let v = await resume(fx(), id, { design: 'Tables X and Y' })
   assert.equal(v.waiting?.kind, 'design-approval')
   assert.deepEqual((v.waiting!.findings as Array<{ description: string }>).map(f => f.description), ['[plan-fitness] Read offers is two PRs'])
@@ -142,12 +142,12 @@ test('standard stack: design reviewed, proposed PR list approved, a member split
   v = await resume(fx(), id, { approve: true, useProposed: true })
   assert.ok(calls.includes('#1423 PRs in order: 1. Read offers / 2. Review them'))
   assert.deepEqual(calls.filter(c => c.startsWith('sub ')), ['sub #1424 of #1423: 1/2 Read offers', 'sub #1425 of #1423: 2/2 Review them'])
-  assert.equal(v.waiting?.number, 1424)
-  assert.equal((await laneState(fx(), runIdFor(1424)))?.base, 'stack/1423-import-offers')
+  assert.equal(v.waiting?.number, "1424")
+  assert.equal((await laneState(fx(), runIdFor("1424")))?.base, 'stack/1423-import-offers')
 
   // Member 1 was split into two more PRs at its plan approval; when it finishes they go right after it.
-  splits.set(1424, ['Read offers: background job', 'Read offers: retries'])
-  open.delete(1424)
+  splits.set("1424", ['Read offers: background job', 'Read offers: retries'])
+  open.delete("1424")
   v = await resume(fx(), id, { retry: true })
   assert.deepEqual(calls.filter(c => c.startsWith('sub ')).slice(2), [
     'sub #1426 of #1423: 2/4 Read offers: background job after #1424',
@@ -155,7 +155,7 @@ test('standard stack: design reviewed, proposed PR list approved, a member split
   ])
   assert.ok(calls.includes('#1423 PRs in order: 1. Read offers / 2. Read offers: background job / 3. Read offers: retries / 4. Review them'))
   assert.ok(calls.includes('retitle #1425: 4/4 Review them'))
-  assert.equal(v.waiting?.number, 1426)
+  assert.equal(v.waiting?.number, "1426")
   // A retry inserts nothing twice.
   v = await resume(fx(), id, { retry: true })
   assert.equal((await stackState(fx(), id))?.members.length, 4)

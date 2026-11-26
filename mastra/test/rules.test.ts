@@ -15,12 +15,12 @@ import {
 
 test("work item names are short: number and meaningful title words", () => {
   assert.equal(
-    workItemName({ number: 1412, title: "Inquiries hang when Slack is down!" }),
+    workItemName({ number: "1412", title: "Inquiries hang when Slack is down!" }),
     "1412-inquiries-hang-slack-down",
   );
   assert.equal(
     workItemName({
-      number: 1425,
+      number: "1425",
       title:
         "2/6 Read offers from an uploaded document in the background (#1423)",
     }),
@@ -28,14 +28,14 @@ test("work item names are short: number and meaningful title words", () => {
   );
   assert.equal(
     workItemName({
-      number: 1423,
+      number: "1423",
       title: "Suppliers can import leasing and sale offers from a PDF or CSV",
     }),
     "1423-suppliers-import-leasing",
   );
 
   const long = workItemName({
-    number: 9,
+    number: "9",
     title: "Supercalifragilisticexpialidocious-ness everywhere",
   });
 
@@ -107,5 +107,5 @@ test('standard lane rules: lane, proposed PRs, section replace', () => {
   assert.equal(replaceSection('### Outcome\n\nX\n\n### PRs in order\n\n1. A\n\n### Lane\n\nstandard', 'PRs in order', '1. A\n2. B'),
     '### Outcome\n\nX\n\n### PRs in order\n\n1. A\n2. B\n\n### Lane\n\nstandard')
   assert.equal(replaceSection('### Outcome\n\nX', 'Lane', 'standard'), '### Outcome\n\nX\n\n### Lane\n\nstandard\n')
-  assert.match(memberIssue({ parent: { number: 1, title: 'T', body: '', url: '', author: '', comments: [] }, branch: 'stack/x', design: 'd', index: 0, total: 1, member: { title: 'A', byHand: false }, lane: 'standard' }).body, /### Lane\n\nstandard$/)
+  assert.match(memberIssue({ parent: { number: "1", title: 'T', body: '', url: '', author: '', comments: [] }, branch: 'stack/x', design: 'd', index: 0, total: 1, member: { title: 'A', byHand: false }, lane: 'standard' }).body, /### Lane\n\nstandard$/)
 })

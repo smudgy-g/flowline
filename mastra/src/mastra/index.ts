@@ -21,10 +21,10 @@ export const mastra: ReturnType<typeof createFactory> = createFactory(
 // Query by issue, not a paginated board list. Never remove another install's VMs.
 try {
   for (const box of await sandbox.list()) {
-    const m = /^fx-(uat-)?((\d+)(?:-[a-z0-9-]+)?)$/.exec(box.name);
+    const m = /^fx-(uat-)?(([A-Za-z0-9._-]+?)(?:-[a-z0-9-]+)?)$/.exec(box.name);
     if (!m) continue;
     const mount = box.workspaces?.[0];
     if (!(m[1] ? mount?.startsWith(`${factoryRoot}/.cache/run-`) && mount.endsWith('/scratch') : mount === `${config.worktrees}${m[2]}`)) continue;
-    if (!await view(mastra,runIdFor(Number(m[3])))) await sandbox.remove(m[2],!!m[1]);
+    if (!await view(mastra,runIdFor(m[3]))) await sandbox.remove(m[2],!!m[1]);
   }
 } catch (err) { console.warn('Sandbox reconciliation unavailable:', (err as Error).message); }

@@ -7,7 +7,9 @@ import { LibSQLStore } from '@mastra/libsql'
 import { PinoLogger } from '@mastra/loggers'
 import { MastraStorageExporter, Observability, SensitiveDataFilter } from '@mastra/observability'
 import { createFastLane, initialState, type LaneState, type Ops } from './fast-lane.ts'
-import { config } from './config.ts'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { dirname } from 'node:path'
+import { config, factoryRoot } from './config.ts'
 import { createStack, initialStackState, type Members, type StackOps, type StackState } from './stack.ts'
 
 const noStackOps = new Proxy({} as StackOps, { get: () => async () => { throw new Error('This factory has no stack ops') } })
@@ -20,8 +22,8 @@ export function createFactory(ops: Ops, databaseUrl: string, apiRoutes: ApiRoute
   // A stack's members are fast-lane runs in this same factory, which exists once the constructor returns.
   const self: { factory?: any } = {}
   const members: Members = {
-    start: (issue: number, base: string): Promise<unknown> => start(self.factory, issue, base),
-    has: async (issue: number): Promise<boolean> => !!await find(self.factory, runIdFor(issue)),
+    start: (issue: string, base: string): Promise<unknown> => start(self.factory, issue, base),
+    has: async (issue: string): Promise<boolean> => !!await find(self.factory, runIdFor(issue)),
   }
   const runs = new LibSQLStore({ id: 'factory', url: databaseUrl })
   const mastra = new Mastra({
@@ -54,8 +56,8 @@ export type Factory = ReturnType<typeof createFactory>
 
 export const BOARD_ORIGINS = [4111, 4112].flatMap(port => [`http://localhost:${port}`, `http://127.0.0.1:${port}`])
 
-/** One run per issue (task or stack), so a second start for the same issue is refused. */
-export const runIdFor = (issue: number) => `issue-${issue}`
+/** One run per work item (task or stack), so a second start for the same item is refused. */
+export const runIdFor = (issue: string) => `item-${issue}`
 
 /** Workflow key in the factory, and the id its snapshots are stored under. */
 const WORKFLOWS = [['fastLane', 'fast-lane'], ['stack', 'stack']] as const
@@ -121,18 +123,37 @@ export async function list(factory: Factory): Promise<RunView[]> {
 }
 
 /** Runs until the lane waits for someone or finishes. */
-export async function start(factory: Factory, issue: number, base = config.base): Promise<RunView> {
+/**
+ * Run state belongs to one repo and one tracker: ids from another would collide with these worktrees, sandboxes
+ * and run ids. Recorded on first use, checked on every start.
+ */
+export async function checkOwner(): Promise<void> {
+  const file = `${factoryRoot}/mastra/.data/owner.json`;
+  const owner = { repo: config.repo, tracker: config.tracker.command.join(' ') };
+  const recorded = await readFile(file, 'utf8').then(JSON.parse, () => null);
+  if (!recorded) {
+    await mkdir(dirname(file), { recursive: true });
+    await writeFile(file, JSON.stringify(owner));
+    return;
+  }
+  if (recorded.repo !== owner.repo || recorded.tracker !== owner.tracker)
+    throw new Error(`This state belongs to ${recorded.repo} via ${recorded.tracker}. Use a separate factory checkout, or clear mastra/.data/.`);
+}
+
+export async function start(factory: Factory, issue: string, base = config.base): Promise<RunView> {
+  await checkOwner()
   const runId = runIdFor(issue)
-  if (await view(factory, runId)) throw new Error(`Issue #${issue} already has a run (${runId})`)
+  if (await view(factory, runId)) throw new Error(`Work item ${issue} already has a run (${runId})`)
   const run = await factory.getWorkflow('fastLane').createRun({ runId })
   await run.start({ inputData: { issue, base }, initialState: initialState() })
   return (await view(factory, runId))!
 }
 
 /** Starts a stack for a Factory stack issue; runs until it waits for the design. */
-export async function startStack(factory: Factory, issue: number): Promise<RunView> {
+export async function startStack(factory: Factory, issue: string): Promise<RunView> {
+  await checkOwner()
   const runId = runIdFor(issue)
-  if (await view(factory, runId)) throw new Error(`Issue #${issue} already has a run (${runId})`)
+  if (await view(factory, runId)) throw new Error(`Work item ${issue} already has a run (${runId})`)
   const run = await factory.getWorkflow('stack').createRun({ runId })
   await run.start({ inputData: { issue }, initialState: initialStackState() })
   return (await view(factory, runId))!

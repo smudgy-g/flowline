@@ -10,6 +10,7 @@
 import { createStep, createWorkflow } from "@mastra/core/workflows";
 import { z } from "zod";
 import { config } from "./config.ts";
+import { ItemId } from "./tracker.ts";
 import {
   blockingFindings,
   breakdownPrompt,
@@ -46,9 +47,9 @@ const CODE_REVIEWERS = config.skills.codeReviewers;
 export type Ops = {
   /** Someone asked this run (or every run) to pause: it stops before its next step and waits until resumed. */
   paused(runId: string): Promise<boolean>;
-  readIssue(number: number): Promise<Issue>;
+  readIssue(number: string): Promise<Issue>;
   /** Labels the issue as this factory's; fails if another factory has claimed it. Safe to repeat. */
-  claim(number: number): Promise<void>;
+  claim(number: string): Promise<void>;
   branchExists(branch: string): Promise<boolean>;
   /**
    * Factory commit whose UAT inputs (specs, seeds, baseline) this work item is judged against: HEAD, or `at`
@@ -75,13 +76,13 @@ export type Ops = {
     baseline: string,
   ): Promise<{ run: string; report: UatReport }>;
   openDraftPr(worktree: string, title: string, body: string): Promise<string>;
-  commentOnIssue(number: number, text: string): Promise<void>;
+  commentOnIssue(number: string, text: string): Promise<void>;
   /** Fails unless every named skill loads in the worktree (a standard run checks its reviewers before it starts). */
   checkSkills(worktree: string, skills: string[]): Promise<void>;
-  /** Creates a Factory task issue (label `factory`); returns its number. */
-  createIssue(title: string, body: string): Promise<number>;
+  /** Creates a new work item in the tracker; returns its id. */
+  createIssue(title: string, body: string): Promise<string>;
   /** A stack member split into more PRs: the stack inserts `parts` after it when it finishes. */
-  recordSplit(base: string, member: number, parts: string[]): Promise<void>;
+  recordSplit(base: string, member: string, parts: string[]): Promise<void>;
   /** Adds an entry to the work item's written history (in its worktree). */
   record(worktree: string, title: string, body?: string): Promise<void>;
 };
@@ -96,7 +97,7 @@ export const Base = z
   );
 
 const IssueSchema = z.object({
-  number: z.number(),
+  number: z.string(),
   title: z.string(),
   body: z.string(),
   url: z.string(),
@@ -123,7 +124,7 @@ export const LaneState = z.object({
   scope: z.string().optional(),
   /** The other parts of a split, and the issues already created for them (a single issue only). */
   split: z
-    .object({ parts: z.array(z.string()), created: z.array(z.number()) })
+    .object({ parts: z.array(z.string()), created: z.array(z.string()) })
     .optional(),
   issue: IssueSchema.optional(),
   baseline: z.string(),
@@ -311,7 +312,7 @@ export const describeReviews = (r: Reviews) =>
     .join("\n\n");
 
 const Input = z.object({
-  issue: z.number().int().positive(),
+  issue: ItemId,
   base: Base.default(config.base),
 });
 
@@ -366,7 +367,7 @@ export function createFastLane(ops: Ops) {
           state.worktree,
           state.plan
             ? "You approved a revised plan"
-            : `You approved the plan for #${state.issue!.number}: ${state.issue!.title}`,
+            : `You approved the plan for ${state.issue!.number}: ${state.issue!.title}`,
           planText(suspendData.plan as Plan),
         );
 

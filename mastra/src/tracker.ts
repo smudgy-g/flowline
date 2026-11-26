@@ -4,15 +4,17 @@ import { execFile } from 'node:child_process';
 import { z } from 'zod';
 import { config, factoryRoot } from './config.ts';
 
+/** Safe in a branch name, a path and a run id; the factory only ever echoes it. */
+export const ItemId = z.string().regex(/^[A-Za-z0-9._-]{1,64}$/);
 const Item = z.strictObject({
-  id: z.number().int().positive(), title: z.string().min(1), body: z.string(),
+  id: ItemId, title: z.string().min(1), body: z.string(),
   url: z.string(), author: z.string(), comments: z.array(z.string()).default([]),
 });
 const Listed = z.array(z.strictObject({
-  id: z.number().int().positive(), title: z.string().min(1), url: z.string(), stack: z.boolean().default(false),
+  id: ItemId, title: z.string().min(1), url: z.string(), stack: z.boolean().default(false),
 }));
 const Ok = z.strictObject({ ok: z.literal(true) });
-const Created = z.strictObject({ id: z.number().int().positive() });
+const Created = z.strictObject({ id: ItemId });
 const Delivered = z.strictObject({ url: z.string().min(1) });
 const State = z.strictObject({ open: z.boolean() });
 const Acceptance = z.strictObject({ state: z.enum(['open', 'accepted', 'rejected']) });
@@ -31,23 +33,23 @@ const call: Call = (argv, stdin) => new Promise((done, fail) => {
 
 /** The adapter, each verb parsed into the shape the lane expects. */
 export function trackerClient(run: Call = call) {
-  const verb = async <T>(shape: z.ZodType<T>, argv: (string | number)[], stdin = ''): Promise<T> => {
-    const out = await run(argv.map(String), stdin);
+  const verb = async <T>(shape: z.ZodType<T>, argv: string[], stdin = ''): Promise<T> => {
+    const out = await run(argv, stdin);
     try { return shape.parse(JSON.parse(out)); }
     catch (error) { throw new Error(`tracker ${argv[0]} returned an unusable reply: ${(error as Error).message}`); }
   };
   return {
     list: () => verb(Listed, ['list']),
-    read: (id: number) => verb(Item, ['read', id]),
-    claim: (id: number, owner: string) => verb(Ok, ['claim', id, owner]),
-    release: (id: number) => verb(Ok, ['release', id]),
-    comment: (id: number, text: string) => verb(Ok, ['comment', id], text),
-    create: (kind: 'task' | 'child', body: { title: string; body: string; parent?: number; after?: number }) =>
+    read: (id: string) => verb(Item, ['read', id]),
+    claim: (id: string, owner: string) => verb(Ok, ['claim', id, owner]),
+    release: (id: string) => verb(Ok, ['release', id]),
+    comment: (id: string, text: string) => verb(Ok, ['comment', id], text),
+    create: (kind: 'task' | 'child', body: { title: string; body: string; parent?: string; after?: string }) =>
       verb(Created, ['create', kind], JSON.stringify(body)),
-    retitle: (id: number, title: string) => verb(Ok, ['retitle', id], title),
-    section: (id: number, name: string, text: string) => verb(Ok, ['section', id, name], text),
-    state: (id: number) => verb(State, ['state', id]),
-    close: (id: number, text: string) => verb(Ok, ['close', id], text),
+    retitle: (id: string, title: string) => verb(Ok, ['retitle', id], title),
+    section: (id: string, name: string, text: string) => verb(Ok, ['section', id, name], text),
+    state: (id: string) => verb(State, ['state', id]),
+    close: (id: string, text: string) => verb(Ok, ['close', id], text),
     deliver: (branch: string, base: string, title: string, body: string) =>
       verb(Delivered, ['deliver', branch, base], JSON.stringify({ title, body })),
     delivered: (url: string) => verb(Acceptance, ['delivered', url]),

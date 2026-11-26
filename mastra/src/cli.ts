@@ -32,7 +32,7 @@ function show(v: RunView) {
  * Approval needs a person at a terminal who types the issue number. This keeps the driver Pi from approving
  * by accident; it is not a security boundary against an agent with a shell in the same VM (README.md).
  */
-async function confirm(v: RunView, issue: number): Promise<true> {
+async function confirm(v: RunView, issue: string): Promise<true> {
   const kind = v.waiting?.kind
   if (kind !== 'plan-approval' && kind !== 'outcome-approval') throw new Error(`${v.runId} is not waiting for an approval (${kind ?? v.status})`)
   if (!process.stdin.isTTY) throw new Error('fx approve needs an interactive terminal; only a human approves')
@@ -40,7 +40,7 @@ async function confirm(v: RunView, issue: number): Promise<true> {
   const prompt = createInterface({ input: process.stdin, output: process.stdout })
   const answer = await prompt.question(`Type ${issue} to approve this ${kind === 'plan-approval' ? 'plan' : 'outcome'}: `)
   prompt.close()
-  if (answer.trim() !== String(issue)) throw new Error('Not approved')
+  if (answer.trim() !== issue) throw new Error('Not approved')
   return true
 }
 
@@ -49,9 +49,9 @@ async function main() {
   const [command, issueArg, ...rest] = positionals
   await mkdir(`${factoryRoot}/mastra/.data`, { recursive: true })
   const factory = createFactory(realOps, databaseUrl, [], realStackOps)
-  const issue = Number(issueArg)
+  const issue = issueArg ?? ''
   const id = runIdFor(issue)
-  const needIssue = () => { if (!Number.isInteger(issue) || issue <= 0) throw new Error(`fx ${command} <issue number>`) }
+  const needIssue = () => { if (!/^[A-Za-z0-9._-]{1,64}$/.test(issue)) throw new Error(`fx ${command} <work item>`) }
   const print = (v: RunView | RunView[]) => values.json ? console.log(JSON.stringify(v, null, 2)) : [v].flat().forEach(show)
 
   switch (command) {

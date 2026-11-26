@@ -47,12 +47,12 @@ export const factoryName = (() => {
 })();
 const claimLabel = `factory:${factoryName}`;
 
-async function claim(number: number): Promise<void> {
+async function claim(number: string): Promise<void> {
   await tracker.claim(number, factoryName);
 }
 
 /** An abandoned issue goes back to the Issues column of every factory. */
-export async function releaseIssue(number: number): Promise<void> {
+export async function releaseIssue(number: string): Promise<void> {
   await tracker.release(number);
 }
 
@@ -354,7 +354,7 @@ export async function branchDiff(worktree: string): Promise<string> {
 
 /** Open issues from the Factory task form (`factory`) and the Factory stack form (`factory-stack`) in the client repo. */
 export async function factoryIssues(): Promise<
-  Array<{ number: number; title: string; url: string; stack: boolean }>
+  Array<{ number: string; title: string; url: string; stack: boolean }>
 > {
   return (await tracker.list()).map((i) => ({ number: i.id, title: i.title, url: i.url, stack: i.stack }));
 }
@@ -404,7 +404,7 @@ export async function removeTask(
 
 /** Closes the issue with a comment, unless it is closed already. */
 export async function closeIssue(
-  number: number,
+  number: string,
   comment: string,
 ): Promise<void> {
   if ((await tracker.state(number)).open) await tracker.close(number, comment);
@@ -650,7 +650,7 @@ export const realOps: Ops = {
 };
 
 
-const splitFile = (branch: string, member: number) =>
+const splitFile = (branch: string, member: string) =>
   `${stackDir(branch)}/splits/${member}.json`;
 
 

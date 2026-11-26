@@ -9,8 +9,8 @@ import { trackerClient } from '../src/tracker.ts';
 test('the client rejects a reply the lane could not trust', async () => {
   const t = (out: string) => trackerClient(async () => out);
   await assert.rejects(t('not json').list(), /unusable/);
-  await assert.rejects(t('{"id":"42","title":"x","body":"","url":"","author":"a"}').read(42), /unusable/);
-  await assert.rejects(t('{"ok":false}').claim(42, 'factory'), /unusable/);
+  await assert.rejects(t('{"id":"../escape","title":"x","body":"","url":"","author":"a"}').read('7'), /unusable/);
+  await assert.rejects(t('{"ok":false}').claim('7', 'factory'), /unusable/);
   await assert.rejects(t('{"state":"merged"}').delivered('u'), /unusable/);
   assert.deepEqual(await t('{"state":"accepted"}').delivered('u'), { state: 'accepted' });
 });
@@ -22,45 +22,62 @@ test('the local adapter keeps items in the repo, claims exclusively and accepts 
   git('init', '-qb', 'main');
   git('commit', '-qm', 'base', '--allow-empty');
   await mkdir(join(root, '.factory/items'), { recursive: true });
-  await writeFile(join(root, '.factory/items/7.md'), '# Add a health endpoint\n\n### Outcome\n\nIt answers 200.\n\n### Lane\n\nfast lane\n');
+  await writeFile(join(root, '.factory/items/health.md'), '# Add a health endpoint\n\n### Outcome\n\nIt answers 200.\n\n### Lane\n\nfast lane\n');
   const adapter = join(import.meta.dirname, '../../trackers/local.mjs');
   const local = trackerClient(async (argv, stdin) =>
     execFileSync('node', [adapter, ...argv], { input: stdin, encoding: 'utf8', env: { ...process.env, FACTORY_CHECKOUT: root, FACTORY_BASE: 'main' } }));
 
-  assert.deepEqual(await local.list(), [{ id: 7, title: 'Add a health endpoint', url: `file://${root}/.factory/items/7.md`, stack: false }]);
-  await local.comment(7, 'Use /healthz.');
-  const item = await local.read(7);
+  assert.deepEqual(await local.list(), [{ id: 'health', title: 'Add a health endpoint', url: `file://${root}/.factory/items/health.md`, stack: false }]);
+  await local.comment('health', 'Use /healthz.');
+  const item = await local.read('health');
   assert.match(item.body, /It answers 200\.[\s\S]*---[\s\S]*Use \/healthz\./);
   assert.deepEqual(item.comments, ['Use /healthz.']);
 
-  assert.deepEqual(await local.claim(7, 'factory'), { ok: true });
-  assert.deepEqual(await local.claim(7, 'factory'), { ok: true }, 'claiming twice is safe');
-  await assert.rejects(local.claim(7, 'other'), /already running on factory/);
+  assert.deepEqual(await local.claim('health', 'factory'), { ok: true });
+  assert.deepEqual(await local.claim('health', 'factory'), { ok: true }, 'claiming twice is safe');
+  await assert.rejects(local.claim('health', 'other'), /already running on factory/);
   assert.deepEqual(await local.list(), [], 'a claimed item is nobody else\'s to start');
-  await local.release(7);
+  await local.release('health');
   assert.equal((await local.list()).length, 1);
 
-  await local.section(7, 'Lane', 'standard');
-  assert.match(await readFile(join(root, '.factory/items/7.md'), 'utf8'), /### Lane\n\nstandard\n/);
-  await local.retitle(7, 'Add /healthz');
-  assert.equal((await local.read(7)).title, 'Add /healthz');
+  await local.section('health', 'Lane', 'standard');
+  assert.match(await readFile(join(root, '.factory/items/health.md'), 'utf8'), /### Lane\n\nstandard\n/);
+  await local.retitle('health', 'Add /healthz');
+  assert.equal((await local.read('health')).title, 'Add /healthz');
 
-  const child = await local.create('child', { title: 'Member one', body: 'First PR.', parent: 7 });
-  assert.equal(child.id, 8);
-  assert.deepEqual((await local.list()).map(i => i.id), [7], 'a stack member is not startable on its own');
+  const child = await local.create('child', { title: 'Member one', body: 'First PR.', parent: 'health' });
+  assert.equal(child.id, 'member-one');
+  assert.deepEqual((await local.list()).map(i => i.id), ['health'], 'a stack member is not startable on its own');
 
-  const { url } = await local.deliver('7-add-healthz', 'main', 'Add /healthz', 'The change.');
+  const { url } = await local.deliver('health-endpoint', 'main', 'Add /healthz', 'The change.');
   assert.deepEqual(await local.delivered(url), { state: 'open' });
-  git('checkout', '-qb', '7-add-healthz');
+  git('checkout', '-qb', 'health-endpoint');
   git('commit', '-qm', 'work', '--allow-empty');
   git('checkout', '-q', 'main');
   assert.deepEqual(await local.delivered(url), { state: 'open' }, 'unmerged work is not accepted');
-  git('merge', '-q', '7-add-healthz');
+  git('merge', '-q', 'health-endpoint');
   assert.deepEqual(await local.delivered(url), { state: 'accepted' });
 
-  assert.deepEqual(await local.state(7), { open: true });
-  await local.close(7, 'Merged.');
-  assert.deepEqual(await local.state(7), { open: false });
-  await assert.rejects(local.read(7), /closed/);
-  await assert.rejects(local.read(99), /No work item 99/);
+  assert.deepEqual(await local.state('health'), { open: true });
+  await local.close('health', 'Merged.');
+  assert.deepEqual(await local.state('health'), { open: false });
+  await assert.rejects(local.read('health'), /closed/);
+  await assert.rejects(local.read('nope'), /No work item nope/);
+});
+
+test('state belongs to one repo and one tracker', async t => {
+  // config is a module singleton, so this checks the real checkout's owner file and puts it back.
+  const { factoryRoot, config } = await import('../src/config.ts');
+  const { checkOwner } = await import('../src/runs.ts');
+  const file = join(factoryRoot, 'mastra/.data/owner.json');
+  const before = await readFile(file, 'utf8').catch(() => null);
+  t.after(async () => { before === null ? await rm(file, { force: true }) : await writeFile(file, before); });
+
+  await rm(file, { force: true });
+  await checkOwner();
+  assert.deepEqual(JSON.parse(await readFile(file, 'utf8')), { repo: config.repo, tracker: config.tracker.command.join(' ') });
+  await checkOwner();
+
+  await writeFile(file, JSON.stringify({ repo: 'other/repo', tracker: 'node trackers/github.mjs' }));
+  await assert.rejects(checkOwner(), /belongs to other\/repo via node trackers\/github\.mjs/);
 });

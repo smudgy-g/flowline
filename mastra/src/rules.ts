@@ -3,7 +3,7 @@
 import { createHash } from "node:crypto";
 
 export type Issue = {
-  number: number;
+  number: string;
   title: string;
   body: string;
   url: string;
@@ -35,7 +35,7 @@ const FILLER = new Set(
  * title, cut at a word, at most about 30 characters. A stack member's "2/6 " prefix and "(#1423)" suffix are dropped.
  * e.g. "2/6 Read offers from an uploaded document in the background (#1423)" → "1425-read-offers-uploaded".
  */
-export function workItemName(issue: { number: number; title: string }): string {
+export function workItemName(issue: { number: string; title: string }): string {
   const words = issue.title
     .replace(/^\s*\d+\/\d+\s+/, "")
     .replace(/\s*\(#\d+\)\s*$/, "")
@@ -43,7 +43,7 @@ export function workItemName(issue: { number: number; title: string }): string {
     .split(/[^a-z0-9]+/)
     .filter((word) => word && !FILLER.has(word));
 
-  let name = String(issue.number);
+  let name = issue.number;
 
   for (const word of words) {
     if (name.length + 1 + word.length > 30) break;
@@ -52,7 +52,7 @@ export function workItemName(issue: { number: number; title: string }): string {
   }
 
   // A first word too long to fit is cut rather than left out.
-  if (name === String(issue.number) && words.length) {
+  if (name === issue.number && words.length) {
     name = `${name}-${words[0]}`.slice(0, 30);
   }
 
@@ -87,7 +87,7 @@ export function planPrompt(
   scope?: string,
 ): string {
   return [
-    `Write the implementation plan for GitHub issue #${issue.number}: ${issue.title}`,
+    `Write the implementation plan for work item ${issue.number}: ${issue.title}`,
     "Read-only. First read AGENTS.md, CONTEXT.md and docs/ where relevant, any stack design in .agents/artefacts/stack/, and the code the issue touches; trace the real flow. Then plan the narrowest change that meets the issue.",
     `## Issue\n${issue.body}`,
     scope &&
@@ -172,7 +172,7 @@ export function coderPrompt(
   step?: { index: number; total: number; text: string },
 ): string {
   return [
-    `Implement the approved plan for GitHub issue #${issue.number}: ${issue.title}`,
+    `Implement the approved plan for work item ${issue.number}: ${issue.title}`,
     `## Plan\n${plan.summary}\n\n## Tests to add or change\n${plan.tests}`,
     decisionsText(decisions),
     feedback && `## Fix this first\n${feedback}`,
@@ -266,14 +266,14 @@ export function draftPrBody(args: {
   const { report } = args;
   return [
     `## Summary\n${args.plan.summary}`,
-    `## Why\nRefs #${args.issue.number}: ${args.issue.title}`,
+    `## Why\nRefs ${args.issue.number}: ${args.issue.title}`,
     `## Verification\n- Acceptance: ${report.pass ? "pass" : "fail"} (run ${args.uatRun}, commit ${report.commit})\n${report.detail}`,
     `## Low review notes\n${args.lowNotes.join("\n") || "None"}`,
     "Human review required; no auto-merge.",
   ].join("\n\n");
 }
 
-export type StackMember = { title: string; byHand: boolean; number?: number };
+export type StackMember = { title: string; byHand: boolean; number?: string };
 
 /** A section of an issue-form body: the text under `### <name>` up to the next heading. */
 export function formSection(body: string, name: string): string {
@@ -364,7 +364,7 @@ export function planReviewPrompt(
   scope?: string,
 ): string {
   return [
-    `Review the drafted plan for GitHub issue #${issue.number}: ${issue.title} with /skill:${skill}, before any code is written.`,
+    `Review the drafted plan for work item ${issue.number}: ${issue.title} with /skill:${skill}, before any code is written.`,
     "Read-only. Read the code the plan touches before judging it.",
     `## Issue\n${issue.body}`,
     scope && `## This PR covers only this part of the issue\n${scope}`,
@@ -387,7 +387,7 @@ export function designReviewPrompt(
   skill: string,
 ): string {
   return [
-    `Review the technical design and PR list for the stacked feature #${issue.number}: ${issue.title} with /skill:${skill}, before any PR starts.`,
+    `Review the technical design and PR list for the stacked feature ${issue.number}: ${issue.title} with /skill:${skill}, before any PR starts.`,
     "Read-only. The checkout is the current base branch; read the code the design touches before judging it.",
     `## Issue\n${issue.body}`,
     `## The design (one for every PR)\n${design}`,

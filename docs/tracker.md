@@ -27,18 +27,18 @@ The factory runs `<command> <verb> [args…]` from the factory root with that `e
 | `deliver` | `branch` `base` | `{ "title", "body" }` | `{ "url" }` — opens or updates the proposal, idempotent |
 | `delivered` | `url` | — | `{ "state": "open" \| "accepted" \| "rejected" }` |
 
-`id` is a string the adapter chooses and the factory only echoes; it must be safe in a branch name (`[A-Za-z0-9._-]{1,64}`). The factory still derives the work item name, branch, worktree and sandbox from it, so an id stays stable for the life of an item.
+`id` is a string the adapter chooses and the factory only echoes, matching `[A-Za-z0-9._-]{1,64}` so it is safe in a branch name, a path and a run id. The factory derives the work item name, branch, worktree and sandbox from it, so an id must stay stable for the life of an item. Opaque ids are the point: `AUTH-14`, `health-endpoint` and `312` cannot be mistaken for each other, where bare numbers from two trackers would collide. The factory records its repo and tracker in `mastra/.data/owner.json` on first start and refuses to start against a different pair, so stale worktrees and sandboxes can never be matched to another tracker's ids.
 
 Only `read` output reaches an agent, and only after the adapter has filtered by author: trust stays the adapter's job, because only it knows who its authors are.
 
 ## Shipped adapters
 
-**`trackers/local.mjs` (default).** Items are Markdown files in the target repo under `.factory/items/<id>.md`, with the same `### Outcome`, `### Lane`, `### PRs in order` headings the GitHub forms produce. Comments are `## comment` sections appended to the file; `claim` writes `.factory/claims/<id>` with the owner, `state` reads a `Status:` line. `deliver` pushes nothing: it writes `.factory/delivered/<id>.md` with the branch, base, title and body, returns a `file://` url, and `delivered` reports `accepted` once the base branch contains the branch tip. No network, no account, no remote.
+**`trackers/local.mjs` (default).** Items are Markdown files in the target repo under `.factory/items/<id>.md`, with the same `### Outcome`, `### Lane`, `### PRs in order` headings the GitHub forms produce. Comments are `## comment` sections appended to the file; Ids are the file's own name — `health-endpoint.md` is item `health-endpoint` — and `create` slugs the title, suffixing `-2` on a clash. `claim` writes `.factory/claims/<id>` exclusively, and a closed item gets `<id>.closed` beside it. `deliver` pushes nothing: it writes `.factory/delivered/<id>.md` with the branch, base, title and body, returns a `file://` url, and `delivered` reports `accepted` once the base branch contains the branch tip. No network, no account, no remote.
 
 **`trackers/github.mjs`.** Today's `gh` behaviour, unchanged in substance: issues labelled `factory`/`factory-stack`, `factory:<name>` claim labels, sub-issues for stack members, draft PRs, and `MERGED` as accepted.
 
 ## What changes in the factory
 
-`ops.ts` keeps its function names and loses its `gh` calls: each becomes one adapter invocation. `fast-lane.ts`, `stack.ts` and `board.ts` change only where they assume a number (`issue: number` becomes `id: string`) or say "issue"/"PR" in text the human reads, which becomes "item"/"proposal". The run id stays `issue-<id>`, so existing state keeps working only if ids stay numeric; a factory that switches tracker starts fresh runs.
+`ops.ts` keeps its function names and loses its `gh` calls: each is one adapter invocation. Item ids are strings throughout the lane, stack, board and CLI. The run id is `item-<id>`.
 
 Risk worth naming: a local item file lives in the target repo, which a task's worktree can also write. The factory reads items from the base checkout, never from a task worktree, and `paths.protected` should list `.factory/**` so a task cannot edit its own work item.

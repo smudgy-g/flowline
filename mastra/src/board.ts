@@ -27,6 +27,7 @@ import {
 import { sandbox } from './sandbox.ts';
 import { sha256 } from "./rules.ts";
 import { config } from "./config.ts";
+import { ItemId } from "./tracker.ts";
 import type { StackState } from "./stack.ts";
 import {
   forget,
@@ -88,7 +89,7 @@ const STUCK: Record<string, string> = {
 };
 
 export type Card = {
-  issue: number;
+  issue: string;
   title: string;
   url?: string;
   column: Column;
@@ -131,7 +132,7 @@ export type Card = {
 async function stackCard(factory: Factory, v: RunView): Promise<Card> {
   const s = await stackState(factory, v.runId);
   const base = {
-    issue: Number(v.runId.replace("issue-", "")),
+    issue: v.runId.replace("item-", ""),
     title: s?.issue?.title ?? v.runId,
     url: s?.issue?.url,
     since: v.since,
@@ -200,7 +201,7 @@ export async function card(
   if (v.workflow === "stack") return stackCard(factory, v);
   const step = STEPS[v.step ?? ""] ?? STEPS.intake;
   const base = {
-    issue: Number(runId.replace("issue-", "")),
+    issue: runId.replace("item-", ""),
     title: lane?.issue?.title ?? runId,
     url: lane?.issue?.url,
     since: v.since,
@@ -356,19 +357,14 @@ export function boardRoutes(factory: () => Factory) {
   let issues = {
     at: 0,
     list: [] as Array<{
-      number: number;
+      number: string;
       title: string;
       url: string;
       stack: boolean;
     }>,
     error: "",
   };
-  const issueNumber = (raw: string) => {
-    const issue = Number(raw);
-    if (!Number.isInteger(issue) || issue <= 0)
-      throw new Error(`Not an issue number: ${raw}`);
-    return issue;
-  };
+  const itemId = (raw: string) => ItemId.parse(raw);
 
   return [
     registerApiRoute("/board", {
@@ -464,7 +460,7 @@ export function boardRoutes(factory: () => Factory) {
       handler: async (c) => {
         const lane = await laneState(
           factory(),
-          runIdFor(issueNumber(c.req.param("issue"))),
+          runIdFor(itemId(c.req.param("issue"))),
         );
         if (!lane?.worktree) return c.text("No worktree yet", 404);
         return c.text(await branchDiff(lane.worktree));
@@ -477,7 +473,7 @@ export function boardRoutes(factory: () => Factory) {
       handler: async (c) => {
         const lane = await laneState(
           factory(),
-          runIdFor(issueNumber(c.req.param("issue"))),
+          runIdFor(itemId(c.req.param("issue"))),
         );
         const text = lane?.worktree
           ? await readFile(checksLog(lane.worktree), "utf8").catch(() =>
@@ -502,7 +498,7 @@ export function boardRoutes(factory: () => Factory) {
     registerApiRoute('/board/recreate/:issue', {
       method:'POST', requiresAuth:false,
       handler: async c => {
-        const id = runIdFor(issueNumber(c.req.param('issue')));
+        const id = runIdFor(itemId(c.req.param('issue')));
         const {token} = await c.req.json<{token?:string}>();
         const [current,lane] = await Promise.all([card(factory(),id),laneState(factory(),id)]);
         if (!lane?.workItem || busy.has(id) || current?.waiting?.kind !== 'error' || !token || token !== current.token) return c.json({error:'No matching error wait'},409);
@@ -522,10 +518,10 @@ export function boardRoutes(factory: () => Factory) {
       method: "POST",
       requiresAuth: false,
       handler: async (c) => {
-        const issue = issueNumber(c.req.param("issue"));
+        const issue = itemId(c.req.param("issue"));
         const runId = runIdFor(issue);
         if (busy.has(runId) || (await view(factory(), runId)))
-          return c.json({ error: `#${issue} already has a run` }, 409);
+          return c.json({ error: `${issue} already has a run` }, 409);
         const stack = issues.list.find((i) => i.number === issue)?.stack;
         inBackground(runId, () =>
           stack ? startStack(factory(), issue) : start(factory(), issue),
@@ -539,7 +535,7 @@ export function boardRoutes(factory: () => Factory) {
       method: "POST",
       requiresAuth: false,
       handler: async (c) => {
-        const issue = issueNumber(c.req.param("issue"));
+        const issue = itemId(c.req.param("issue"));
         const runId = runIdFor(issue);
         const { abandon } = await c.req.json<{ abandon?: boolean }>();
         const [v, lane] = await Promise.all([
@@ -596,7 +592,7 @@ export function boardRoutes(factory: () => Factory) {
         const raw = c.req.param("target");
         const { on } = await c.req.json<{ on?: boolean }>();
         try {
-          const target = raw === "all" ? "all" : runIdFor(issueNumber(raw));
+          const target = raw === "all" ? "all" : runIdFor(itemId(raw));
           await setPaused(target, !!on);
           if (!on)
             for (const runId of await resumable(factory(), target, paused))
@@ -613,7 +609,7 @@ export function boardRoutes(factory: () => Factory) {
       method: "POST",
       requiresAuth: false,
       handler: async (c) => {
-        const runId = runIdFor(issueNumber(c.req.param("issue")));
+        const runId = runIdFor(itemId(c.req.param("issue")));
         const body = await c.req.json<{
           token?: string;
           action?: string;

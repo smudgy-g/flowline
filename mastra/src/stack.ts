@@ -11,6 +11,7 @@
 // stack PR. Add a sync step before each member if the base branch moves under long stacks.
 import { createWorkflow } from "@mastra/core/workflows";
 import { z } from "zod";
+import { ItemId } from "./tracker.ts";
 import {
   describeReviews,
   guardedStep,
@@ -33,32 +34,32 @@ import {
 export type StackOps = {
   /** As the fast lane's: a pause stops the stack before its next step. */
   paused(runId: string): Promise<boolean>;
-  readIssue(number: number): Promise<Issue>;
+  readIssue(number: string): Promise<Issue>;
   /** As the fast lane's: the stack issue is this factory's. */
-  claim(number: number): Promise<void>;
+  claim(number: string): Promise<void>;
   /** Creates `branch` on GitHub from the remote base branch, unless it exists. */
   createStackBranch(branch: string): Promise<void>;
   /**
    * Creates an issue and links it as the parent's sub-issue: the last one, or right after the sub-issue `after`.
-   * Returns its number.
+   * Returns its id.
    */
   createSubIssue(
-    parent: number,
+    parent: string,
     title: string,
     body: string,
-    after?: number,
-  ): Promise<number>;
-  retitleIssue(number: number, title: string): Promise<void>;
+    after?: string,
+  ): Promise<string>;
+  retitleIssue(number: string, title: string): Promise<void>;
   /** Replaces one form section (`### <name>`) of an issue's body. */
-  updateIssueSection(number: number, name: string, text: string): Promise<void>;
+  updateIssueSection(number: string, name: string, text: string): Promise<void>;
   /** Runs read-only reviews in a fresh checkout of the remote base branch, removed afterwards. */
   withReviewCheckout<T>(
     work: (call: (prompt: string) => Promise<string>) => Promise<T>,
   ): Promise<T>;
   /** The PRs a member was split into at its plan approval (fast-lane `recordSplit`), beyond its own; [] if none. */
-  splitOf(branch: string, member: number): Promise<string[]>;
-  issueOpen(number: number): Promise<boolean>;
-  closeIssue(number: number, comment: string): Promise<void>;
+  splitOf(branch: string, member: string): Promise<string[]>;
+  issueOpen(number: string): Promise<boolean>;
+  closeIssue(number: string, comment: string): Promise<void>;
   openStackPr(branch: string, title: string, body: string): Promise<string>;
   /** Adds an entry to the stack's written history (members read it). */
   record(branch: string, title: string, body?: string): Promise<void>;
@@ -66,8 +67,8 @@ export type StackOps = {
   saveDesign(branch: string, design: string): Promise<void>;
 };
 export type Members = {
-  start(issue: number, base: string): Promise<unknown>;
-  has(issue: number): Promise<boolean>;
+  start(issue: string, base: string): Promise<unknown>;
+  has(issue: string): Promise<boolean>;
 };
 
 export const StackState = z.object({
@@ -77,7 +78,7 @@ export const StackState = z.object({
     z.object({
       title: z.string(),
       byHand: z.boolean(),
-      number: z.number().optional(),
+      number: z.string().optional(),
     }),
   ),
   design: z.string(),
@@ -86,7 +87,7 @@ export const StackState = z.object({
   /** From the stack form; every member runs in it. Older stacks have none: fast. */
   lane: z.enum(["fast", "standard"]).optional(),
   /** Members whose split has been put into `members`, so a restart never inserts it twice. */
-  splitDone: z.array(z.number()).optional(),
+  splitDone: z.array(z.string()).optional(),
 });
 export type StackState = z.infer<typeof StackState>;
 export const initialStackState = (): StackState => ({
@@ -113,7 +114,7 @@ export function createStack(ops: StackOps, members: Members) {
     guardedStep(id, i, o, run, schemas, ops.paused);
   const intake = laneStep(
     "stack-intake",
-    z.object({ issue: z.number().int().positive() }),
+    z.object({ issue: ItemId }),
     Step,
     async ({ inputData, state, setState }) => {
       const issue = await ops.readIssue(inputData.issue);
@@ -247,7 +248,7 @@ export function createStack(ops: StackOps, members: Members) {
 
       list[index] = { ...member, number };
 
-      await ops.record(state.branch, `Sub-issue #${number} created`, title);
+      await ops.record(state.branch, `Sub-item ${number} created`, title);
 
       state = { ...state, members: list };
       await setState(state);
@@ -325,7 +326,7 @@ export function createStack(ops: StackOps, members: Members) {
         await ops.record(
           state.branch,
           `PR ${index + 1} of ${state.members.length} finished`,
-          `#${member.number} ${member.title}`,
+          `${member.number} ${member.title}`,
         );
       };
 
@@ -422,7 +423,7 @@ export function createStack(ops: StackOps, members: Members) {
     id: "stack",
     description:
       "Stack: Factory stack issue → approved design → sub-issues → fast-lane members on one branch → draft PR to the base branch",
-    inputSchema: z.object({ issue: z.number().int().positive() }),
+    inputSchema: z.object({ issue: ItemId }),
     outputSchema: z.object({ prUrl: z.string() }),
     stateSchema: StackState,
   })

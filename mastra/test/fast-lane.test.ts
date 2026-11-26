@@ -60,7 +60,7 @@ function fakeWorld() {
       comments: [],
     }),
     claim: async (n) => {
-      world.claims.push(n);
+      world.claims.push(Number(n));
     },
     branchExists: async () => false,
     uatBaseline: async (at, after) => {
@@ -126,7 +126,7 @@ function fakeWorld() {
     },
     createIssue: async (title) => {
       world.issues.push(title);
-      return 2000 + world.issues.length;
+      return String(2000 + world.issues.length);
     },
     recordSplit: async (base, member, parts) => {
       world.splits.push(`${base} #${member}: ${parts.join(" | ")}`);
@@ -144,9 +144,9 @@ test("fast lane: plan, retry on test failure, approve, UAT replan, draft PR", as
   const { ops, calls, world } = fakeWorld();
   const db = `file:${join(mkdtempSync(join(tmpdir(), "fx-")), "factory.db")}`;
   const fx = () => createFactory(ops, db); // a fresh process per command
-  const id = runIdFor(1412);
+  const id = runIdFor("1412");
 
-  let v = await start(fx(), 1412);
+  let v = await start(fx(), "1412");
   assert.equal(v.waiting?.kind, "plan");
   assert.deepEqual(world.claims, [1412]);
   assert.deepEqual(pick(await card(fx(), id)), {
@@ -154,7 +154,7 @@ test("fast lane: plan, retry on test failure, approve, UAT replan, draft PR", as
     kind: "needs",
     status: "Agree a plan",
   });
-  await assert.rejects(start(fx(), 1412), /already has a run/);
+  await assert.rejects(start(fx(), "1412"), /already has a run/);
 
   v = await resume(fx(), id, { plan });
   assert.equal(v.waiting?.kind, "plan-approval");
@@ -165,7 +165,7 @@ test("fast lane: plan, retry on test failure, approve, UAT replan, draft PR", as
 
   // The written history: the plan, each round's coder, checks and review, in order.
   assert.deepEqual(world.history, [
-    "You approved the plan for #1412: Inquiries hang when Slack is down",
+    "You approved the plan for 1412: Inquiries hang when Slack is down",
     "Round 1 · coder",
     'Round 1 · checks failed at "typecheck"',
     "Round 2 · coder",
@@ -225,9 +225,9 @@ test("fast lane: infrastructure failure waits in UAT and retries; unparseable re
   world.reviewReplies = ["looks fine to me", "still no block"]; // the review, then its reformat
   const db = `file:${join(mkdtempSync(join(tmpdir(), "fx-")), "factory.db")}`;
   const fx = () => createFactory(ops, db);
-  const id = runIdFor(7);
+  const id = runIdFor("7");
 
-  await start(fx(), 7);
+  await start(fx(), "7");
   await resume(fx(), id, { plan });
   let v = await resume(fx(), id, { approve: true });
   assert.equal(v.waiting?.kind, "findings");
@@ -256,14 +256,14 @@ test("a stack member builds on its stack branch; anything else is refused", asyn
   const { ops, calls } = fakeWorld();
   const db = `file:${join(mkdtempSync(join(tmpdir(), "fx-")), "factory.db")}`;
   const fx = () => createFactory(ops, db);
-  await start(fx(), 1500, "stack/portal-dashboard");
-  await resume(fx(), runIdFor(1500), { plan });
-  await resume(fx(), runIdFor(1500), { approve: true });
+  await start(fx(), "1500", "stack/portal-dashboard");
+  await resume(fx(), runIdFor("1500"), { plan });
+  await resume(fx(), runIdFor("1500"), { approve: true });
   assert.equal(
     calls[0],
     "provision 1500-inquiries-hang-slack-down on stack/portal-dashboard",
   );
-  const bad = await start(fx(), 1501, "--upload-pack=x").catch((e) => e);
+  const bad = await start(fx(), "1501", "--upload-pack=x").catch((e) => e);
   assert.ok(
     bad instanceof Error || bad.status === "failed",
     "a base that is not the configured base or stack/<name> must not run",
@@ -277,8 +277,8 @@ test("a coder round that changes nothing stops with its reply instead of testing
   world.files = [];
   const db = `file:${join(mkdtempSync(join(tmpdir(), "fx-")), "factory.db")}`;
   const fx = () => createFactory(ops, db);
-  const id = runIdFor(8);
-  await start(fx(), 8);
+  const id = runIdFor("8");
+  await start(fx(), "8");
   await resume(fx(), id, { plan });
   let v = await resume(fx(), id, { approve: true });
   assert.equal(v.waiting?.kind, "no-change");
@@ -299,8 +299,8 @@ test("a coder that is blocked after earlier rounds stops; --proceed and --baseli
   const { ops, calls, world } = fakeWorld();
   const db = `file:${join(mkdtempSync(join(tmpdir(), "fx-")), "factory.db")}`;
   const fx = () => createFactory(ops, db);
-  const id = runIdFor(10);
-  await start(fx(), 10);
+  const id = runIdFor("10");
+  await start(fx(), "10");
   await resume(fx(), id, { plan });
   // Round 1 fails a gate; in round 2 the coder edits nothing, though the branch still has round 1's files.
   world.coderEdits = 1;
@@ -324,8 +324,8 @@ test("after a UAT failure on a stale journey, approving with --baseline moves UA
   const { ops, world } = fakeWorld();
   const db = `file:${join(mkdtempSync(join(tmpdir(), "fx-")), "factory.db")}`;
   const fx = () => createFactory(ops, db);
-  const id = runIdFor(11);
-  await start(fx(), 11);
+  const id = runIdFor("11");
+  await start(fx(), "11");
   await resume(fx(), id, { plan });
   await resume(fx(), id, { approve: true });
   let v = await resume(fx(), id, { approve: true });
@@ -345,8 +345,8 @@ test("a numbered plan goes to the coder one step per call, then once whole; late
   const { ops, calls } = fakeWorld();
   const db = `file:${join(mkdtempSync(join(tmpdir(), "fx-")), "factory.db")}`;
   const fx = () => createFactory(ops, db);
-  const id = runIdFor(9);
-  await start(fx(), 9);
+  const id = runIdFor("9");
+  await start(fx(), "9");
   await resume(fx(), id, {
     plan: {
       summary:
@@ -373,8 +373,8 @@ test("steps the whole-plan call leaves unfinished each get their own call in the
   world.coderReplies = ["step 1 done", "step 2 too big", "step 3 done", "Steps 2 and 3 are missing.\nUnfinished steps: 3, 2, 9"];
   const db = `file:${join(mkdtempSync(join(tmpdir(), "fx-")), "factory.db")}`;
   const fx = () => createFactory(ops, db);
-  const id = runIdFor(12);
-  await start(fx(), 12);
+  const id = runIdFor("12");
+  await start(fx(), "12");
   await resume(fx(), id, {
     plan: { summary: "1. Schema.\n2. Route.\n3. Page.", tests: "t" },
   });
@@ -404,8 +404,8 @@ test("a pause stops a run between coder calls and before its next step; resuming
   world.gateFailures = 0;
   const db = `file:${join(mkdtempSync(join(tmpdir(), "fx-")), "factory.db")}`;
   const fx = () => createFactory(ops, db);
-  const id = runIdFor(13);
-  await start(fx(), 13);
+  const id = runIdFor("13");
+  await start(fx(), "13");
   await resume(fx(), id, {
     plan: { summary: "1. Schema.\n2. Route.\n3. Page.", tests: "t" },
   });
@@ -444,11 +444,11 @@ test("a plan without numbered steps is split by the planner; an unusable split l
     'Read the code.\n```json\n{"steps":["Move the schema in a.ts","2. Add the route b.ts"]}\n```';
   const db = `file:${join(mkdtempSync(join(tmpdir(), "fx-")), "factory.db")}`;
   const fx = () => createFactory(ops, db);
-  await start(fx(), 10);
-  await resume(fx(), runIdFor(10), {
+  await start(fx(), "10");
+  await resume(fx(), runIdFor("10"), {
     plan: { summary: "A spec, pasted as is.", tests: "t" },
   });
-  await resume(fx(), runIdFor(10), { approve: true });
+  await resume(fx(), runIdFor("10"), { approve: true });
   assert.deepEqual(
     calls.filter((c) => c.startsWith("pi coder") || c === "pi planner"),
     [
@@ -459,18 +459,18 @@ test("a plan without numbered steps is split by the planner; an unusable split l
       "pi coder",
     ],
   );
-  assert.deepEqual((await card(fx(), runIdFor(10)))?.lane?.steps, [
+  assert.deepEqual((await card(fx(), runIdFor("10")))?.lane?.steps, [
     "1. Move the schema in a.ts",
     "2. Add the route b.ts",
   ]);
 
   calls.length = 0;
   world.plannerReply = "no json";
-  await start(fx(), 11);
-  await resume(fx(), runIdFor(11), {
+  await start(fx(), "11");
+  await resume(fx(), runIdFor("11"), {
     plan: { summary: "Another spec.", tests: "t" },
   });
-  await resume(fx(), runIdFor(11), { approve: true });
+  await resume(fx(), runIdFor("11"), { approve: true });
   assert.deepEqual(
     calls.filter((c) => c.startsWith("pi coder") || c === "pi planner"),
     ["pi planner", "pi planner", "pi coder"],
@@ -482,9 +482,9 @@ test("a send-back is a decision: later coders and reviewers get it, and its roun
   world.gateFailures = 0;
   const db = `file:${join(mkdtempSync(join(tmpdir(), "fx-")), "factory.db")}`;
   const fx = () => createFactory(ops, db);
-  const id = runIdFor(12);
+  const id = runIdFor("12");
 
-  await start(fx(), 12);
+  await start(fx(), "12");
   await resume(fx(), id, { plan });
   let v = await resume(fx(), id, { approve: true });
   assert.equal(v.waiting?.kind, "outcome-approval");
@@ -509,7 +509,7 @@ test("the planner drafts the plan from the issue; the card asks to approve it, w
   const db = `file:${join(mkdtempSync(join(tmpdir(), "fx-")), "factory.db")}`;
   const fx = () => createFactory(ops, db);
 
-  const v = await start(fx(), 13);
+  const v = await start(fx(), "13");
 
   assert.equal(v.waiting?.kind, "plan-approval");
   assert.deepEqual(v.waiting?.plan, {
@@ -557,9 +557,9 @@ test("standard: every plan reviewed, at most two automatic revisions, then it wa
   };
   const db = `file:${join(mkdtempSync(join(tmpdir(), "fx-")), "factory.db")}`;
   const fx = () => createFactory(ops, db);
-  const id = runIdFor(1500);
+  const id = runIdFor("1500");
 
-  let v = await start(fx(), 1500);
+  let v = await start(fx(), "1500");
   assert.equal(v.waiting?.kind, "plan-approval");
   assert.ok(calls.includes("skills 6"));
   assert.equal(calls.filter((c) => c === "pi planner").length, 3);
@@ -605,10 +605,10 @@ test("a fast-lane issue gets no plan review and one code reviewer", async () => 
   world.gateFailures = 0;
   const db = `file:${join(mkdtempSync(join(tmpdir(), "fx-")), "factory.db")}`;
   const fx = () => createFactory(ops, db);
-  let v = await start(fx(), 1501);
+  let v = await start(fx(), "1501");
   assert.equal(v.waiting?.kind, "plan-approval");
   assert.equal(v.waiting?.findings, undefined);
-  v = await resume(fx(), runIdFor(1501), { approve: true });
+  v = await resume(fx(), runIdFor("1501"), { approve: true });
   assert.equal(v.waiting?.kind, "outcome-approval");
   assert.equal(calls.filter((c) => c === "pi review").length, 1);
   assert.ok(!calls.some((c) => c.startsWith("skills")));
@@ -619,9 +619,9 @@ test("split at plan approval: this run keeps the first part; the rest become iss
   world.plannerReply = planReply(1);
   const db = `file:${join(mkdtempSync(join(tmpdir(), "fx-")), "factory.db")}`;
   const fx = () => createFactory(ops, db);
-  const id = runIdFor(1502);
+  const id = runIdFor("1502");
 
-  await start(fx(), 1502);
+  await start(fx(), "1502");
   let v = await resume(fx(), id, { split: ["Fail fast: route", "Retry later: queue", "Alert: Slack"] });
   assert.equal(v.waiting?.kind, "plan-approval");
   assert.equal(v.waiting?.scope, "Fail fast: route");
@@ -634,8 +634,8 @@ test("split at plan approval: this run keeps the first part; the rest become iss
   assert.ok(world.prompts.at(-1)!.includes("Fail fast: route"));
 
   // A stack member's split is handed to the stack instead.
-  await start(fx(), 1503, "stack/1400-offers");
-  await resume(fx(), runIdFor(1503), { split: ["Read offers", "Review offers"] });
+  await start(fx(), "1503", "stack/1400-offers");
+  await resume(fx(), runIdFor("1503"), { split: ["Read offers", "Review offers"] });
   assert.deepEqual(world.splits, ["stack/1400-offers #1503: Review offers"]);
   assert.equal(world.issues.length, 2);
 });

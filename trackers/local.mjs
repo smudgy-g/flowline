@@ -19,11 +19,12 @@ const dir = name => {
   mkdirSync(path, { recursive: true })
   return path
 }
+// Ids are the file's own name: stable, readable, and distinct from another tracker's.
 const id = raw => {
-  const n = Number(raw)
-  if (!Number.isInteger(n) || n <= 0 || n > 1e9) throw new Error(`Invalid item id: ${raw}`)
-  return n
+  if (!/^[A-Za-z0-9._-]{1,64}$/.test(raw) || raw.startsWith('.')) throw new Error(`Invalid item id: ${raw}`)
+  return raw
 }
+const slug = title => (title.toLowerCase().match(/[a-z0-9]+/g) ?? ['item']).join('-').slice(0, 48)
 const itemFile = n => join(dir('items'), `${n}.md`)
 const read = n => {
   if (!existsSync(itemFile(n))) throw new Error(`No work item ${n} in .factory/items`)
@@ -46,9 +47,9 @@ switch (verb) {
     const claims = dir('claims')
     say(readdirSync(dir('items'))
       .filter(f => f.endsWith('.md') && !existsSync(join(dir('items'), `${basename(f, '.md')}.closed`)))
-      .map(f => Number(basename(f, '.md')))
-      .filter(n => Number.isInteger(n) && n > 0 && !existsSync(join(claims, String(n))))
-      .sort((a, b) => a - b)
+      .map(f => basename(f, '.md'))
+      .filter(n => !existsSync(join(claims, n)))
+      .sort()
       .map(n => {
         const text = read(n)
         return { id: n, title: title(text), url: url(n), stack: /^###\s+PRs in order\s*$/m.test(text) }
@@ -66,7 +67,7 @@ switch (verb) {
   }
   case 'claim': {
     const [n, owner] = [id(args[0]), args[1] ?? 'factory']
-    const file = join(dir('claims'), String(n))
+    const file = join(dir('claims'), n)
     try { closeSync(openSync(file, 'wx')) } // exclusive: two factories can't both take it
     catch (error) {
       if (error.code !== 'EEXIST') throw error
@@ -79,7 +80,7 @@ switch (verb) {
     break
   }
   case 'release':
-    try { execFileSync('rm', ['-f', join(dir('claims'), String(id(args[0])))]) } catch {}
+    try { execFileSync('rm', ['-f', join(dir('claims'), id(args[0]))]) } catch {}
     say({ ok: true })
     break
   case 'comment': {
@@ -92,11 +93,13 @@ switch (verb) {
     const kind = args[0]
     if (!['task', 'child'].includes(kind)) throw new Error(`Unknown item kind: ${kind}`)
     const { title: heading, body, parent } = JSON.parse(stdin())
-    const used = readdirSync(dir('items')).map(f => Number(basename(f, '.md'))).filter(Number.isInteger)
-    const n = Math.max(0, ...used) + 1
+    const taken = new Set(readdirSync(dir('items')).map(f => basename(f, '.md')))
+    const stem = slug(heading)
+    let n = stem
+    for (let i = 2; taken.has(n); i++) n = `${stem}-${i}`
     // A child is not startable on its own: its stack hands it to the lane.
     writeFileSync(itemFile(n), `# ${heading}\n\n${parent ? `Parent: ${parent}\n\n` : ''}${body.trim()}\n`)
-    if (parent) writeFileSync(join(dir('claims'), String(n)), `stack-${parent}`)
+    if (parent) writeFileSync(join(dir('claims'), n), `stack-${parent}`)
     say({ id: n })
     break
   }
