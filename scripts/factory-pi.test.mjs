@@ -93,7 +93,7 @@ test('content tree changes with any tracked or untracked edit, not with ignored 
     mkdirSync(join(dir, 'ignored'))
     writeFileSync(join(dir, 'ignored/checks.log'), 'log')
     assert.equal(tree(), base)
-    writeFileSync(join(dir, 'a.ts'), 'two')
+    writeFileSync(join(dir, 'a.ts'), 'two, of a different length') // same size within the same second looks unchanged to git
     const edited = tree()
     assert.notEqual(edited, base)
     writeFileSync(join(dir, 'b.ts'), 'new')
