@@ -32,7 +32,6 @@ import {
   planReviewPrompt,
   splitIssue,
   tagged,
-  CODE_REVIEWERS,
   MAX_PLAN_REVISIONS,
   PLAN_REVIEWERS,
   type Lane,
@@ -41,6 +40,9 @@ import {
   type Plan,
   type UatReport,
 } from "./rules.ts";
+
+/** The standard lane's extra code reviewers (factory.config.json). */
+const CODE_REVIEWERS = config.skills.codeReviewers;
 
 /** Every side effect the lane has. ops.ts is the real one; tests pass fakes. */
 export type Ops = {

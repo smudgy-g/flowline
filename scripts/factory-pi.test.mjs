@@ -7,9 +7,19 @@ import { join } from 'node:path'
 import { authorizeTool, coderSkills, FALLBACKS, isUsageLimit, requireSkills } from './factory-pi.mjs'
 
 test('coder selects test and domain skills by changed path; missing skills stop dispatch', () => {
-  assert.deepEqual(coderSkills(['app/components/Card.vue', 'app/composables/useCard.ts', 'server/api/card.get.ts']),
+  const coder = {
+    always: ['ponytail', 'write-tests'],
+    areas: {
+      components: { paths: ['components/**', 'app/components/**'], skills: ['write-component'] },
+      composables: { paths: ['app/composables/**'], skills: ['write-composable'] },
+      server: { paths: ['server/api/**', 'server/middleware/**'], skills: ['write-server-route'] },
+    },
+  }
+  assert.deepEqual(coderSkills(['app/components/Card.vue', 'app/composables/useCard.ts', 'server/api/card.get.ts'], coder),
     ['ponytail', 'write-tests', 'write-component', 'write-composable', 'write-server-route'])
-  assert.deepEqual(coderSkills(['shared/utils/card.ts']), ['ponytail', 'write-tests'])
+  assert.deepEqual(coderSkills(['shared/utils/card.ts'], coder), ['ponytail', 'write-tests'])
+  assert.deepEqual(coderSkills(['server/middleware/auth.ts', 'components/A.vue'], coder), ['ponytail', 'write-tests', 'write-component', 'write-server-route'])
+  assert.deepEqual(coderSkills(['app/components/A.vue']), [])
   assert.throws(() => requireSkills({ getSkills: () => ({ skills: [] }) }, ['architect']), /Missing \/skill:architect/)
 })
 

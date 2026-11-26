@@ -10,7 +10,7 @@ Nothing here is paid or hosted: Mastra runs in-process, and run state is a SQLit
 |---|---|
 | `src/fast-lane.ts` | The workflow: stages, loops and the gates where it waits |
 | `src/stack.ts` | The stack workflow: design gate, sub-issues, members run as fast-lane tasks on one branch |
-| `src/config.ts` | Reads `../factory.config.json`: the GitHub repo, base branch, checkout, worktree and skills paths, and what agents may read outside a worktree |
+| `src/config.ts` | Reads `../factory.config.json`: the GitHub repo, base branch, checkout and worktree paths, what agents may read outside a worktree, and the skills (`../skills/README.md`) |
 | `src/rules.ts` | Pure rules: naming, path policy, prompts, review parsing, UAT verdicts, PR body |
 | `src/ops.ts` | Side effects: git, workmux, Pi (`../scripts/factory-pi.mjs`), UAT (`../scripts/run-uat.sh`), `gh` |
 | `src/runs.ts` | Start, read and resume runs (used by the CLI and the tests) |
@@ -52,7 +52,7 @@ An issue (or stack) whose form says **Lane: standard** runs the same workflow wi
 - **Wider code review.** Each round adds `architect`, `interrogate`, `change-impact` and `typescript-guidance` beside the usual reviewer, findings tagged with who made them. Critical and high block as before. An extra reviewer with no readable findings is recorded and skipped.
 - **Stack design review.** A standard stack's design and PR list go to `plan-fitness` and `architect` before you approve. If they propose a different PR list, the card shows it next to the current one: **Approve with the proposed list** rewrites the parent issue's "PRs in order" and the sub-issues follow it.
 - **Splitting a PR** (any lane). At plan approval, **Split into PRs** takes one PR per line (prefilled with the reviewers' proposal, if any). The card keeps the first part and replans for it alone. On staging the other parts become new `factory` issues straight away (the original gets a comment linking them). In a stack they become sub-issues right after this member once it finishes, and the parent's list and later sub-issues' `n/total` titles follow.
-- A standard run checks its reviewer skills load before planning (`checkSkills`). All the agents' skills live in this repo's `skills/` (`factory.config.json` `skills`), copied into each worktree.
+- A standard run checks its reviewer skills load before planning (`checkSkills`). The skills come from the packs in `skills/` that `factory.config.json` names (`skills/README.md`).
 - Cost: up to 12 review calls per plan draft (4 per review, 3 reviews), 4 extra per code-review round, 2 per stack design.
 
 ## How it works

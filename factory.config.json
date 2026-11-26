@@ -4,6 +4,26 @@
   "workspace": "..",
   "checkout": "client/staging",
   "worktrees": "client/worktrees",
-  "skills": "skills",
-  "readable": ["supabase/staging"]
+  "readable": ["supabase/staging"],
+  "skills": {
+    "packs": ["skills/core", "skills/typescript", "skills/nuxt"],
+    "coder": {
+      "always": ["ponytail", "write-tests"],
+      "areas": {
+        "components": {
+          "paths": ["components/**", "app/components/**"],
+          "skills": ["write-component"]
+        },
+        "composables": {
+          "paths": ["composables/**", "app/composables/**"],
+          "skills": ["write-composable"]
+        },
+        "server routes": {
+          "paths": ["server/api/**"],
+          "skills": ["write-server-route"]
+        }
+      }
+    },
+    "codeReviewers": ["architect", "interrogate", "change-impact", "typescript-guidance"]
+  }
 }

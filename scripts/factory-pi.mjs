@@ -1,7 +1,7 @@
 import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { execFile, execFileSync } from 'node:child_process'
-import { basename, dirname, join, relative, resolve, sep } from 'node:path'
+import { basename, dirname, join, matchesGlob, relative, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
 // Besides its worktree, a Pi session may read only factory.config.json's `readable` (e.g. migrations, for schema
@@ -178,12 +178,13 @@ export function requireSkills(loader, names) {
   })
 }
 
-export function coderSkills(paths) {
-  return ['ponytail', 'write-tests',
-    ...(['app/components/', 'components/'].some(prefix => paths.some(path => path.startsWith(prefix))) ? ['write-component'] : []),
-    ...(paths.some(path => /^(app\/)?composables\//.test(path)) ? ['write-composable'] : []),
-    ...(paths.some(path => path.startsWith('server/api/')) ? ['write-server-route'] : []),
-  ]
+// factory.config.json's skills.coder, which the factory passes as FACTORY_CODER_SKILLS.
+const coderConfig = JSON.parse(process.env.FACTORY_CODER_SKILLS ?? '{"always":[],"areas":{}}')
+
+/** The coder's skills: the ones it always gets, and each area's whose paths (globs) match a path it touches. */
+export function coderSkills(paths, { always, areas } = coderConfig) {
+  const touched = Object.values(areas).filter(area => paths.some(path => area.paths.some(glob => matchesGlob(path, glob))))
+  return [...new Set([...always, ...touched.flatMap(area => area.skills)])]
 }
 
 async function main() {
@@ -198,9 +199,10 @@ async function main() {
   let instruction = named.length ? withSkills(requireSkills(loader, named)) : prompt
   if (role === 'coder') {
     const paths = changedPaths(worktree)
-    const planned = [...prompt.matchAll(/(?:app\/components|components|(?:app\/)?composables|server\/api)\/[^\s,`]+/g)].map(match => match[0])
+    // Paths the prompt names (e.g. the plan's step), so a step gets its area's skills before it touches the file.
+    const planned = prompt.match(/[\w@.()[\]-]+(?:\/[\w@.()[\]-]+)+/g) ?? []
     const skills = requireSkills(loader, [...new Set([...named, ...coderSkills([...paths, ...planned])])])
-    instruction = withSkills(skills, "Follow AGENTS.md's Testing rules (including DOM-driven component tests and server-route business logic tests).\nTo delete a file, write it empty: the factory removes empty files.\n\n")
+    instruction = withSkills(skills, "Follow AGENTS.md's testing rules.\nTo delete a file, write it empty: the factory removes empty files.\n\n")
   }
   const runtime = await sdk.ModelRuntime.create()
   const key = existsSync(fallbackKeyFile) ? readFileSync(fallbackKeyFile, 'utf8').trim() : ''

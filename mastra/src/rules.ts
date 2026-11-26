@@ -428,12 +428,6 @@ export const PLAN_REVIEWERS = [
   "architect",
 ];
 export const DESIGN_REVIEWERS = ["plan-fitness", "architect"];
-export const CODE_REVIEWERS = [
-  "architect",
-  "interrogate",
-  "change-impact",
-  "typescript-guidance",
-];
 /** Automatic planner revisions on reviewer findings before the plan waits for the human. */
 export const MAX_PLAN_REVISIONS = 2;
 

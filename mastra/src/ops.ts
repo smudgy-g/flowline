@@ -35,7 +35,6 @@ export { factoryRoot } from "./config.ts";
 const workspace = config.workspace;
 const client = config.checkout;
 const worktrees = config.worktrees;
-const projectSkills = config.skills;
 export const issueRepo = config.repo;
 
 /**
@@ -327,6 +326,32 @@ const forkPoint = async (worktree: string) =>
  * delivery after a UAT failure still shows, tests and fingerprints the whole change. `since: 'HEAD'` gives
  * only what is not yet committed.
  */
+/**
+ * Copies every skill pack (factory.config.json) into `dir`'s .agents/skills, beside any skills the project has, and
+ * keeps what the factory adds out of git (the repo's info/exclude, shared by its worktrees): a task never commits it.
+ */
+async function addSkills(dir: string, extra: string[] = []): Promise<void> {
+  const names: string[] = [];
+  for (const pack of config.skills.packs) {
+    await cp(pack, `${dir}/.agents/skills`, { recursive: true, dereference: true });
+    names.push(...(await readdir(pack)));
+  }
+  const exclude = `${await run(dir, "git", ["rev-parse", "--path-format=absolute", "--git-common-dir"])}/info/exclude`;
+  const current = await readFile(exclude, "utf8").catch(() => "");
+  const have = new Set(current.split("\n"));
+  const missing = [
+    "/.agents/artefacts/",
+    ...names.map((name) => `/.agents/skills/${name}/`),
+    ...extra,
+  ].filter((line) => !have.has(line));
+  if (!missing.length) return;
+  await mkdir(dirname(exclude), { recursive: true });
+  await appendFile(
+    exclude,
+    `${current && !current.endsWith("\n") ? "\n" : ""}${missing.join("\n")}\n`,
+  );
+}
+
 async function changedFiles(
   worktree: string,
   since?: string,
@@ -760,11 +785,11 @@ export const realOps: Ops = {
     await checkWorktree(worktree);
     await mkdir(`${worktree}/.agents/artefacts`, { recursive: true });
     // A project that keeps AGENTS.md out of its repo (gitignored in the checkout) still gives every task one.
-    if (
+    const agentsMd =
       !(await exists(`${worktree}/AGENTS.md`)) &&
-      (await exists(`${client}/AGENTS.md`))
-    )
-      await cp(`${client}/AGENTS.md`, `${worktree}/AGENTS.md`);
+      (await exists(`${client}/AGENTS.md`));
+    if (agentsMd) await cp(`${client}/AGENTS.md`, `${worktree}/AGENTS.md`);
+    await addSkills(worktree, agentsMd ? ["/AGENTS.md"] : []);
 
     // A stack member reads the stack's design and history: what earlier PRs decided.
     if (base.startsWith("stack/") && (await exists(stackDir(base)))) {
@@ -773,11 +798,6 @@ export const realOps: Ops = {
       });
     }
 
-    await run(client, "cp", [
-      "-RL",
-      projectSkills,
-      `${worktree}/.agents/skills`,
-    ]);
     // Staging may have gained packages the VM's store lacks; fetch only downloads (no scripts), then the install stays offline.
     await run(worktree, "pnpm", ["fetch", "--ignore-scripts"]);
     await run(worktree, "pnpm", ["install", "--offline", "--frozen-lockfile"]);
@@ -799,6 +819,7 @@ export const realOps: Ops = {
       {
         FACTORY_BASE: `origin/${await baseOf(worktree)}`,
         FACTORY_READABLE: JSON.stringify(config.readable),
+        FACTORY_CODER_SKILLS: JSON.stringify(config.skills.coder),
       },
     );
   },
@@ -1156,8 +1177,7 @@ export const realStackOps: StackOps = {
     const dir = `${worktrees}review-${Date.now()}`;
     await run(client, "git", ["worktree", "add", "--detach", dir, `origin/${config.base}`]);
     try {
-      await mkdir(`${dir}/.agents`, { recursive: true });
-      await run(client, "cp", ["-RL", projectSkills, `${dir}/.agents/skills`]);
+      await addSkills(dir);
       return await work((prompt) => realOps.runPi(dir, "review", prompt));
     } finally {
       await run(client, "git", ["worktree", "remove", "--force", dir]);
