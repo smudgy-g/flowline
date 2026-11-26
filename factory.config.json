@@ -5,6 +5,13 @@
   "checkout": "client/staging",
   "worktrees": "client/worktrees",
   "readable": ["supabase/staging"],
+  "sandbox": {
+    "kit": "shell",
+    "cpus": 2,
+    "memory": "2g",
+    "allowlist": ["registry.npmjs.org"],
+    "maxConcurrent": 1
+  },
   "skills": {
     "packs": ["skills/core", "skills/typescript", "skills/nuxt"],
     "coder": {

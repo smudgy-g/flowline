@@ -20,6 +20,12 @@ a coder, checks, cold review, your approval and black-box UAT. **[WORKFLOW.md](W
 
 Prerequisites (all in the VM image): Docker with cached Supabase images, cached pnpm packages, Chromium, `bwrap`, `socat`, `psql`, `jq`, Node and pnpm (`mise.toml`), and the Supabase CLI pinned in `package.json` (or `SUPABASE_BIN`).
 
+## Sandbox worker configuration (migration in progress)
+
+For a dedicated Ubuntu worker install Docker `sbx`, log in once, and initialize `sbx policy init deny-all` **on that worker only**. Do not share its daemon with unrelated projects. `factory.config.json` → `sandbox` defines the trusted `kit` (the shell fixture is for testing; supply a project-ready toolchain), `cpus`, `memory` (`m` or `g`), exact registry hostnames in `allowlist`, and `maxConcurrent` running sandboxes. Start with one on a 4 GiB worker. Never put credentials in the kit, project files or command environment. UAT uses a separate fresh deny-all sandbox and read-only pre-staged dependencies, not a policy switch on the build VM. [Measured worker results](docs/sandboxes.md).
+
+The CLI wrapper by itself does not migrate the workflow: do not move the legacy factory out of its VM until project commands, UAT and host hardening are wired and tested.
+
 ## Limits
 
 Agents get no shell tool; the factory's own commands run with the VM user's permissions, and that user has Docker access (root-equivalent inside the VM). The tool guard and worktrees are not a sandbox: the VM is. The checked-in `specs/` are writable by the agent's Unix user, so **don't treat the factory as tamper-proof against its own operator**. The real gates are the draft PR and you merging it.

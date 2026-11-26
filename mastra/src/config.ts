@@ -24,6 +24,13 @@ const Config = z.object({
   worktrees: z.string(),
   /** Outside the worktree, what agents may read (e.g. the schema repo). */
   readable: z.array(z.string()).default([]),
+  sandbox: z.object({
+    kit: z.string().min(1).regex(/^[a-zA-Z0-9][a-zA-Z0-9_./:@-]*$/),
+    cpus: z.number().int().positive(),
+    memory: z.string().regex(/^[1-9]\d*[mg]$/).refine(value => value.endsWith('g') || parseInt(value) >= 512, 'minimum 512m'),
+    allowlist: z.array(z.string().regex(/^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,63}$/)),
+    maxConcurrent: z.number().int().positive(),
+  }).strict(),
   skills: z.object({
     /** Folders of skills (e.g. skills/core, skills/nuxt), all copied into each worktree's .agents/skills. */
     packs: z.array(z.string()).min(1),
@@ -51,6 +58,7 @@ const at = (path: string) => resolve(workspace, path);
 
 export const config = {
   repo: raw.repo,
+  sandbox: raw.sandbox,
   base: raw.base,
   workspace,
   checkout: at(raw.checkout),
