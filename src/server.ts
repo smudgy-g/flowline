@@ -27,7 +27,14 @@ export async function startBoard(port = Number(process.env.PORT) || 4111) {
     if (route.handler) app.on(route.method, route.path, route.handler);
 
   await pruneSandboxes(factory);
-  const server = serve({ fetch: app.fetch, hostname: "127.0.0.1", port });
+  // Bound before anything is reported, and a busy port is a sentence, not a stack trace.
+  const server = await new Promise<ReturnType<typeof serve>>((resolve, reject) => {
+    const s = serve({ fetch: app.fetch, hostname: "127.0.0.1", port }, () => resolve(s));
+    s.on("error", (err: NodeJS.ErrnoException) =>
+      reject(err.code === "EADDRINUSE"
+        ? new Error(`Port ${port} is already in use (another board, or an SSH tunnel). Free it, or run with PORT=<other>.`)
+        : err));
+  });
   return { factory, server, url: `http://localhost:${port}/board` };
 }
 
