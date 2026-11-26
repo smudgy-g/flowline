@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -61,6 +62,7 @@ test('the local adapter keeps items in the repo, claims exclusively and accepts 
   assert.deepEqual(await local.state('health'), { open: true });
   await local.close('health', 'Merged.');
   assert.deepEqual(await local.state('health'), { open: false });
+  assert.equal(existsSync(join(root, '.factory/claims/health')), false, 'closing releases the claim');
   await assert.rejects(local.read('health'), /closed/);
   await assert.rejects(local.read('nope'), /No work item nope/);
 });

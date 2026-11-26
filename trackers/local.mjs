@@ -8,7 +8,7 @@
 //
 // Read from the base checkout only. A task worktree can write these files, so list `.factory/**` in paths.protected.
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync, openSync, closeSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync, openSync, closeSync } from 'node:fs'
 import { basename, join } from 'node:path'
 
 const root = process.env.FACTORY_CHECKOUT
@@ -80,7 +80,7 @@ switch (verb) {
     break
   }
   case 'release':
-    try { execFileSync('rm', ['-f', join(dir('claims'), id(args[0]))]) } catch {}
+    rmSync(join(dir('claims'), id(args[0])), { force: true })
     say({ ok: true })
     break
   case 'comment': {
@@ -128,6 +128,7 @@ switch (verb) {
   case 'close': {
     const n = id(args[0])
     writeFileSync(join(dir('items'), `${n}.closed`), `${stdin().trim()}\n`)
+    rmSync(join(dir('claims'), n), { force: true }) // a closed item is nobody's
     say({ ok: true })
     break
   }
