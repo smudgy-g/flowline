@@ -5,7 +5,14 @@
   "checkout": "client/staging",
   "worktrees": "client/worktrees",
   "readable": ["supabase/staging"],
+  "uat": {
+    "assets": ".cache/uat-assets",
+    "inputs": ["scripts/run-uat.sh", "scripts/uat-app.sh", "scripts/uat-browser.sh", "scripts/local-dns.cjs", "scripts/mock-dns.mjs", "scripts/fake-resend.mjs", "scripts/summarize.mjs", "specs", "seeds", "playwright.config.mjs", "lighthouse-baseline.json"],
+    "command": ["bash", "scripts/run-uat.sh"],
+    "env": {"APP_IMAGE":"factory-project:local", "RUNNER_IMAGE":"factory-browser:local"}
+  },
   "commands": {
+    "preview": ["bash", "/opt/factory/scripts/project-preview.sh"],
     "changedCode": ["**/*.{js,ts,jsx,tsx,mjs,cjs,mts,cts,vue}"],
     "setup": [["pnpm", "install", "--frozen-lockfile"], ["pnpm", "exec", "nuxt", "prepare"]],
     "autofix": [["pnpm", "exec", "eslint", "--fix", "--no-warn-ignored", "--", "{changedCode}"], ["pnpm", "exec", "prettier", "--write", "--ignore-unknown", "--", "{changedCode}"]],

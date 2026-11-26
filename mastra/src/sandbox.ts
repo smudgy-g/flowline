@@ -54,7 +54,7 @@ export function sandboxClient(call: Cli = cli, settings = config.sandbox,
         } catch (err) { await must(['rm','--force',name]); throw err; }
       });
     },
-    async exec(item: string, argv: string[], options: {env?: Record<string,string>; timeoutMinutes: number; offline?: boolean}) {
+    async exec(item: string, argv: string[], options: {env?: Record<string,string>; timeoutMinutes: number; offline?: boolean; workdir?: string}) {
       const name = id(item, options.offline);
       if (!argv[0] || !Number.isSafeInteger(options.timeoutMinutes) || options.timeoutMinutes < 1) throw Error('Invalid sandbox command');
       const env = Object.entries(options.env ?? {}).flatMap(([k,v]) => {
@@ -67,7 +67,7 @@ export function sandboxClient(call: Cli = cli, settings = config.sandbox,
         if (!row) throw Error(`Missing sandbox ${name}`);
         if (row.status !== 'running') { capacity(all.filter(s=>s.name !== name)); await must(['exec',name,'true']); }
       });
-      return call(['exec',...env,name,'timeout','-k','30s','--',`${options.timeoutMinutes}m`,...argv]);
+      return call(['exec',...env,...(options.workdir ? ['--workdir',options.workdir] : []),name,'timeout','-k','30s','--',`${options.timeoutMinutes}m`,...argv]);
     },
     stop: (item: string, offline = false) => admit(lock, () => must(['stop',id(item, offline)])),
     remove: (item: string, offline = false) => admit(lock, async () => {

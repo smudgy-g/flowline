@@ -25,8 +25,12 @@ const Config = z.object({
   worktrees: z.string(),
   /** Outside the worktree, what agents may read (e.g. the schema repo). */
   readable: z.array(z.string()).default([]),
+  uat: z.object({
+    assets: z.string().min(1), inputs: z.array(z.string().regex(/^(?!.*(?:^|\/)\.\.(?:\/|$))[a-zA-Z0-9_][a-zA-Z0-9_.\/-]*$/)).min(1),
+    command: Command, env: z.record(z.string(),z.string()).default({}),
+  }).strict(),
   commands: z.object({
-    changedCode: z.array(z.string()).min(1), setup: z.array(Command), autofix: z.array(Command), check: z.array(Command).min(1),
+    preview: Command, changedCode: z.array(z.string()).min(1), setup: z.array(Command), autofix: z.array(Command), check: z.array(Command).min(1),
     gates: z.array(Command).min(1), env: z.record(z.string(),z.string()).default({}),
   }).strict(),
   sandbox: z.object({
@@ -65,6 +69,7 @@ export const config = {
   repo: raw.repo,
   sandbox: raw.sandbox,
   commands: raw.commands,
+  uat: {...raw.uat,assets:resolve(factoryRoot,raw.uat.assets)},
   base: raw.base,
   workspace,
   checkout: at(raw.checkout),

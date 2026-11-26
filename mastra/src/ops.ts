@@ -8,6 +8,7 @@ import {
   cp,
   lstat,
   mkdir,
+  mkdtemp,
   readFile,
   readdir,
   realpath,
@@ -111,13 +112,7 @@ export async function releaseIssue(number: number): Promise<void> {
 }
 
 /** Everything a UAT run reads from the factory repo; run-uat.sh extracts exactly these from one commit. */
-const uatInputs = [
-  "specs",
-  "seeds",
-  "lighthouse-baseline.json",
-  "playwright.config.mjs",
-  "scripts/summarize.mjs",
-];
+const uatInputs = config.uat.inputs;
 
 
 /**
@@ -668,7 +663,7 @@ export const realOps: Ops = {
       .split("\n")
       .filter(Boolean)
       .map((line) => {
-        const match = /^100644 blob [a-f0-9]+\t(.+)$/.exec(line);
+        const match = /^100(?:644|755) blob [a-f0-9]+\t(.+)$/.exec(line);
         if (!match)
           throw new Error(`Unsupported UAT input at ${commit}: ${line}`);
         return match[1];
@@ -811,31 +806,32 @@ export const realOps: Ops = {
   },
 
   async runUat(branch, baseline) {
-    let stdout = "";
+    const commit = await remoteHead(client,branch);
+    if (!/^[a-f0-9]{40,64}$/.test(commit) || await run(client,'git',['rev-parse',`refs/heads/${branch}`]) !== commit) throw Error('Local task commit does not match remote');
+    await realOps.uatBaseline(baseline);
+    const root = `${factoryRoot}/.cache`;
+    await mkdir(root,{recursive:true});
+    const dir = await mkdtemp(`${root}/run-`), inputs = `${dir}/inputs`, scratch = `${dir}/scratch`, source = `${dir}/source`;
+    for (const sub of [inputs,scratch,source]) await mkdir(sub);
+    await run(factoryRoot,'git',['archive','-o',`${dir}/inputs.tar`,baseline,'--',...uatInputs]);
+    await run(factoryRoot,'tar',['-xf',`${dir}/inputs.tar`,'-C',inputs]);
+    await run(client,'git',['archive','-o',`${source}/project.tar`,commit]);
+    const path = `${dir}/report.json`;
+    let report: UatReport;
+    // Never reuse an offline VM, even after an infrastructure failure.
+    await sandbox.remove(branch,true);
+    await sandbox.create(branch,scratch,true,[inputs,source,config.uat.assets]);
     try {
-      stdout = await run(
-        factoryRoot,
-        "bash",
-        [`${factoryRoot}/scripts/run-uat.sh`, branch, baseline],
-        { UAT_INPUTS: uatInputs.join(" ") },
-      );
-    } catch (error) {
-      // run-uat.sh exits non-zero on a failed verdict too; the error carries its stdout, report path included.
-      // Without one, the error's stderr is the only cause there is, so it stays in the message below.
-      stdout = (error as Error).message;
+      const result = await sandbox.exec(branch,config.uat.command,{offline:true,workdir:inputs,timeoutMinutes:60,env:{...config.uat.env,FACTORY_OFFLINE_UAT:'1',INPUTS:inputs,PROJECT_ARCHIVE:`${source}/project.tar`,UAT_ASSETS:config.uat.assets,UAT_REF:branch,UAT_COMMIT:commit}});
+      if (result.code !== 0) throw Error(`Acceptance adapter failed (${result.code}): ${result.output.slice(-3000)}`);
+      report = JSON.parse(result.stdout ?? result.output);
+      if (report.ref !== branch || report.commit !== commit || typeof report.pass !== 'boolean' || (report.knownFailureOnly !== undefined && typeof report.knownFailureOnly !== 'boolean')) throw Error('Invalid acceptance report');
+      await writeFile(path,JSON.stringify(report));
+    } finally {
+      await sandbox.remove(branch,true);
+      await rm(scratch,{recursive:true,force:true});
+      await rm(source,{recursive:true,force:true});
     }
-    const path = stdout
-      .split("\n")
-      .find(
-        (line) =>
-          line.startsWith(`${factoryRoot}/.cache/run-`) &&
-          line.endsWith("/report.json"),
-      );
-    if (!path)
-      throw new Error(
-        `UAT failed before writing a report: ${stdout.slice(-1000)}`,
-      );
-    const report = JSON.parse(await readFile(path, "utf8")) as UatReport;
     // The planner and coder can't see the run; give them the failed journeys' code from its pinned specs.
     const specDir = `${dirname(path)}/inputs/specs`;
     const specs = await Promise.all(
