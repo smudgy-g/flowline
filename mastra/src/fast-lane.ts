@@ -944,7 +944,9 @@ export function createFastLane(ops: Ops) {
     },
   );
 
-  const uat = laneStep("uat", Build, Delivery, async ({ state, setState }) => {
+  const uat = laneStep("uat", Build, Delivery, async ({ state, setState, resumeData }) => {
+    // Retrying a failed acceptance run is where a fixed adapter arrives, so --baseline has to land here too.
+    if (resumeData?.baseline) state = await moveBaseline(state, resumeData.baseline);
     if ((await ops.pushedHead(state.worktree)) !== state.pushedSha)
       throw new Error("Task branch moved since it was pushed");
     const { run, report } = await ops.runUat(state.workItem, state.baseline);
