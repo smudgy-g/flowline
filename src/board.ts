@@ -1,8 +1,8 @@
 // The board: every run as a card in the column of the stage it is at, with what it needs from you.
-// Served by `mastra dev` at http://localhost:4111/board (the page is board.html).
+// Served by `frankenstein board` at http://localhost:4111/board (the page is board.html).
 //
 // Every action carries the token of the wait it was shown, so a click only applies to what was on screen.
-// Like `fx approve`, this guards against mistakes, not against an agent with a shell in the VM (README.md).
+// Like `frankenstein approve`, this guards against mistakes, not against an agent with a shell in the VM (README.md).
 import { readFile } from "node:fs/promises";
 import { registerApiRoute } from "@mastra/core/server";
 import type { LaneState } from "./fast-lane.ts";

@@ -6,7 +6,7 @@
 //            └──────────────────────────── until UAT passes (a client failure replans) ─────────────────────┘
 //
 // A step that needs a person or the driver suspends with a payload saying what it waits for (`kind`).
-// A step that fails unexpectedly also suspends (kind 'error'), so a factory fix and `fx retry` continue the run.
+// A step that fails unexpectedly also suspends (kind 'error'), so a factory fix and `frankenstein retry` continue the run.
 import { createStep, createWorkflow } from "@mastra/core/workflows";
 import { z } from "zod";
 import { config } from "./config.ts";
@@ -170,7 +170,7 @@ export const initialState = (): LaneState => ({
   prUrl: "",
 });
 
-/** What a person or the driver sends to a suspended step (`fx plan|approve|reject|findings|retry`). */
+/** What a person or the driver sends to a suspended step (`frankenstein plan|approve|reject|findings|retry`). */
 const Resume = z.object({
   retry: z.boolean().optional(),
   /** With retry: a note for the coder, kept as a decision. */
@@ -249,7 +249,7 @@ export function guardedStep<
         ...params,
         paused: isPaused,
         resumeData: fromPause ? undefined : params.resumeData,
-        // On `fx retry` the step starts over, so an error payload is not treated as an earlier gate.
+        // On `frankenstein retry` the step starts over, so an error payload is not treated as an earlier gate.
         suspendData:
           fromPause || params.resumeData?.retry ? undefined : params.suspendData,
         setState: (s: z.infer<S>) => params.setState(s),
@@ -259,7 +259,7 @@ export function guardedStep<
       } catch (error) {
         return params.suspend({
           kind: "error",
-          message: `${id} failed: ${(error as Error).message}. Fix the cause, then fx retry.`,
+          message: `${id} failed: ${(error as Error).message}. Fix the cause, then frankenstein retry.`,
         });
       }
     },
@@ -581,7 +581,7 @@ export function createFastLane(ops: Ops) {
 
         return suspend({
           kind: "cycle-limit",
-          message: `${MAX_BUILD_CYCLES} build cycles without an approved outcome. fx retry allows ${MAX_BUILD_CYCLES} more; or abort.`,
+          message: `${MAX_BUILD_CYCLES} build cycles without an approved outcome. frankenstein retry allows ${MAX_BUILD_CYCLES} more; or abort.`,
           feedback: state.feedback,
         });
       }
@@ -782,7 +782,7 @@ export function createFastLane(ops: Ops) {
       const call = (prompt: string) =>
         ops.runPi(state.worktree, "review", prompt);
       // Standard: four more reviewers alongside the main one. Their findings are kept while the main one's wait for
-      // `fx findings`, so answering that doesn't run them again.
+      // `frankenstein findings`, so answering that doesn't run them again.
       const extras: Promise<Reviews> =
         state.lane !== "standard"
           ? Promise.resolve({ findings: [], unparsed: [], proposed: [] })
@@ -886,7 +886,7 @@ export function createFastLane(ops: Ops) {
         return suspend({
           kind: "changed",
           message:
-            'Files changed after testing. Revert those edits and fx retry, or fx reject "<why>" to send it back to implement.',
+            'Files changed after testing. Revert those edits and frankenstein retry, or frankenstein reject "<why>" to send it back to implement.',
           files,
         });
       if (resumeData?.approve) {

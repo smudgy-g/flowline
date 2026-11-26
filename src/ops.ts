@@ -60,7 +60,7 @@ const acceptanceInputs = config.acceptance.inputs;
 
 
 /**
- * The environment for everything the factory runs. `mastra dev` runs with NODE_ENV=production, which made the client's
+ * The environment for everything the factory runs. the board server once ran with NODE_ENV=production, which made a project's
  * tests render Vue in production mode and fail their snapshots, so it is never passed on.
  */
 const { NODE_ENV: _serverMode, ...inherited } = process.env;
