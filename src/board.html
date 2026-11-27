@@ -579,7 +579,9 @@
           >A bigger feature as several changes: describe it once and list them
           in order.</span
         >
-        <button class="btn" id="pause-all" onclick="pauseAll()">Pause all</button>
+        <button class="btn" id="pause-all" onclick="pauseAll()">
+          Pause all
+        </button>
         <span id="pause-info">Runs finish the step they're on, then wait.</span>
         <a href="/workflows/fastLane" style="margin-top: auto">Studio</a>
       </nav>
@@ -654,7 +656,8 @@
           .filter(Boolean)
           .map(([, name, port]) => ({ at: `http://localhost:${port}`, name })),
       ];
-      let projectWorkers = [], cards = [],
+      let projectWorkers = [],
+        cards = [],
         openId = null,
         allPaused = false,
         shown = "";
@@ -665,7 +668,13 @@
             factories.map((f) =>
               fetch(`${f.at}/board/data`)
                 .then((r) => r.json())
-                .then((data) => ({ f, data: data.repo === "{{repo}}" && data.base === "{{base}}" ? data : null }))
+                .then((data) => ({
+                  f,
+                  data:
+                    data.repo === "{{repo}}" && data.base === "{{base}}"
+                      ? data
+                      : null,
+                }))
                 .catch(() => ({ f, data: null })),
             ),
           );
@@ -692,7 +701,9 @@
             }
           // An issue any factory has a card for isn't one to start.
           cards = [
-            ...[...issues.values()].filter((i) => !runs.some((c) => c.issue === i.issue)),
+            ...[...issues.values()].filter(
+              (i) => !runs.some((c) => c.issue === i.issue),
+            ),
             ...runs,
           ];
           const data = up[0].data;
@@ -711,12 +722,20 @@
                 : `<s title="not answering">the ${esc(r.f.name ?? "factory")}</s>`,
             )
             .join(" · ");
-          const down = results.filter((r) => !r.data).map((r) => r.f.name ?? "this factory");
+          const down = results
+            .filter((r) => !r.data)
+            .map((r) => r.f.name ?? "this factory");
           document.getElementById("notice").innerHTML = [
             ...up
               .filter((r) => r.data.issuesError)
-              .map((r) => `Couldn't list work items (${esc(r.data.factory)}): ${esc(r.data.issuesError)}`),
-            ...down.map((n) => `Can't reach the ${esc(n)} factory: check its tunnel and project configuration.`),
+              .map(
+                (r) =>
+                  `Couldn't list work items (${esc(r.data.factory)}): ${esc(r.data.issuesError)}`,
+              ),
+            ...down.map(
+              (n) =>
+                `Can't reach the ${esc(n)} factory: check its tunnel and project configuration.`,
+            ),
           ]
             .map((m) => `<div class="notice">${m}</div>`)
             .join("");
@@ -732,7 +751,8 @@
             `Can't reach the factory: ${e.message}`;
         }
       }
-      const key = (c) => `${c.kind}|${c.status}|${c.sandbox ?? ''}|${c.token ?? ""}`;
+      const key = (c) =>
+        `${c.kind}|${c.status}|${c.sandbox ?? ""}|${c.token ?? ""}`;
 
       function render(columns) {
         const count = (k) => cards.filter((c) => c.kind === k).length;
@@ -757,7 +777,7 @@
             (c) => `
         <button class="card ${c.kind}" onclick="openCard('${esc(c.id)}')">
           <div class="num">${esc(c.issue)}${c.stack ? " · stack" : ""}${c.standard ? " · standard" : ""}${c.many && c.column !== "Items" ? ` · ${esc(c.factory)}` : ""}</div><div class="title">${esc(c.title)}</div>
-          <div class="status">${c.kind === "needs" ? "Needs you: " : ""}${esc(c.status)}${c.sandbox ? ` · Sandbox: ${esc(c.sandbox)}` : ''}</div>
+          <div class="status">${c.kind === "needs" ? "Needs you: " : ""}${esc(c.status)}${c.sandbox ? ` · Sandbox: ${esc(c.sandbox)}` : ""}</div>
           <div class="meta">${c.kind === "running" || c.kind === "needs" || c.kind === "stuck" ? esc(ago(c.since)) : ""}</div>
         </button>`,
           )
@@ -850,7 +870,13 @@
      <pre class="design">${esc(w.design)}</pre>${reviewBlock(w)}${membersBlock(s)}${proposed.length ? `<h3>The reviewers' proposed PR list</h3><ol class="members">${proposed.map((m) => `<li>${esc(m.title)}${m.byHand ? ' <span class="tag test">by hand</span>' : ""}</li>`).join("")}</ol>` : ""}${issue}`,
             (proposed.length
               ? `<button class="btn primary" onclick="act('approve-proposed')">Approve with the proposed list</button>`
-              : "") + decision(proposed.length ? "Approve with the current list" : "Approve design", "…or say what to change"),
+              : "") +
+              decision(
+                proposed.length
+                  ? "Approve with the current list"
+                  : "Approve design",
+                "…or say what to change",
+              ),
           ];
         }
         if (w.kind === "by-hand")
@@ -916,7 +942,7 @@
               ? `<button class="btn primary" onclick="cleanUp(false)">Clean up</button>`
               : "") +
               (c.prUrl
-                ? `<a class="btn${c.merged || c.githubRepo ? "" : " primary"}" style="text-decoration:none;padding:8px 16px;border-radius:6px" href="${esc(c.prUrl)}" target="_blank">${c.githubRepo ? 'Open delivery note' : 'Open the change'}</a>`
+                ? `<a class="btn${c.merged || c.githubRepo ? "" : " primary"}" style="text-decoration:none;padding:8px 16px;border-radius:6px" href="${esc(c.prUrl)}" target="_blank">${c.githubRepo ? "Open delivery note" : "Open the change"}</a>`
                 : "") +
               (c.githubPrUrl
                 ? `<a class="btn primary" style="text-decoration:none;padding:8px 16px;border-radius:6px" href="${esc(c.githubPrUrl)}" target="_blank" rel="noopener noreferrer">Open GitHub PR</a>`
@@ -981,7 +1007,7 @@
      ${retry ? `<p class="muted">Fix the cause (or ask the driver to), then retry.</p>` : ""}
      ${!w.kind ? `<p class="muted">The run stopped unexpectedly. Ask the driver to look at it.</p>` : ""}${historyBlock(c)}${stepsBlock(c)}${coderBlock(c)}${planBlock(c.lane?.plan)}`,
           retry
-            ? `<button class="btn primary" onclick="act('retry')">Retry</button>${w.kind === 'error' && c.lane?.workItem ? `<button class="btn" onclick="recreateSandbox()">Recreate sandbox</button>` : ''}${w.kind === "no-change" ? `<button class="btn" onclick="act('proceed')">Proceed to the checks as it is</button>` : ""}${w.kind === "changed" ? `<textarea id="why" rows="3" placeholder="…or say why and send it back to the coder"></textarea><button class="btn" onclick="act('reject')">Send back</button>` : w.kind === "cycle-limit" || w.kind === "no-change" ? `<textarea id="why" rows="3" placeholder="Optional: a decision for the coder and reviewer (it overrides the plan)"></textarea>` : ""}`
+            ? `<button class="btn primary" onclick="act('retry')">Retry</button>${w.kind === "error" && c.lane?.workItem ? `<button class="btn" onclick="recreateSandbox()">Recreate sandbox</button>` : ""}${w.kind === "no-change" ? `<button class="btn" onclick="act('proceed')">Proceed to the checks as it is</button>` : ""}${w.kind === "changed" ? `<textarea id="why" rows="3" placeholder="…or say why and send it back to the coder"></textarea><button class="btn" onclick="act('reject')">Send back</button>` : w.kind === "cycle-limit" || w.kind === "no-change" ? `<textarea id="why" rows="3" placeholder="Optional: a decision for the coder and reviewer (it overrides the plan)"></textarea>` : ""}`
             : "",
         ];
       }
@@ -1012,7 +1038,12 @@
       const opened = () => cards.find((c) => c.id === openId);
       async function recreateSandbox() {
         const c = opened();
-        if (confirm('Replace this sandbox and rerun setup? The worktree stays; sandbox-local services and data are lost.')) await post(`${c.at}/board/recreate/${c.issue}`,{token:c.token});
+        if (
+          confirm(
+            "Replace this sandbox and rerun setup? The worktree stays; sandbox-local services and data are lost.",
+          )
+        )
+          await post(`${c.at}/board/recreate/${c.issue}`, { token: c.token });
       }
       async function pauseRun(on) {
         const c = opened();
@@ -1048,13 +1079,16 @@
           el.textContent = message;
           el.style.display = "";
         };
-        if (!title || !body) return fail("A title and a description are both needed.");
+        if (!title || !body)
+          return fail("A title and a description are both needed.");
         const r = await fetch("/board/new", {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ title, body }),
         });
-        const data = await r.json().catch(() => ({ error: "The tracker gave no reply" }));
+        const data = await r
+          .json()
+          .catch(() => ({ error: "The tracker gave no reply" }));
         if (!r.ok) return fail(`Could not create it: ${data.error}`);
         closeCard();
         refresh();
@@ -1137,7 +1171,9 @@
       );
 
       async function loadDiff(c) {
-        const text = await (await fetch(`${c.at}/board/diff/${c.issue}`)).text();
+        const text = await (
+          await fetch(`${c.at}/board/diff/${c.issue}`)
+        ).text();
         const el = document.getElementById("diff");
         if (!el) return;
         const files = text
@@ -1198,13 +1234,19 @@
       }
       async function openGithubPr() {
         const c = opened();
-        const tab = window.open('', '_blank'); // Open synchronously so popup blockers do not swallow the PR.
+        const tab = window.open("", "_blank"); // Open synchronously so popup blockers do not swallow the PR.
         if (tab) tab.opener = null;
-        document.querySelectorAll('#actions button').forEach(b => b.disabled = true);
+        document
+          .querySelectorAll("#actions button")
+          .forEach((b) => (b.disabled = true));
         try {
-          const response = await fetch(`${c.at}/board/github-pr/${encodeURIComponent(c.issue)}`, { method: 'POST' });
+          const response = await fetch(
+            `${c.at}/board/github-pr/${encodeURIComponent(c.issue)}`,
+            { method: "POST" },
+          );
           const result = await response.json();
-          if (!response.ok) throw new Error(result.error ?? response.statusText);
+          if (!response.ok)
+            throw new Error(result.error ?? response.statusText);
           if (tab) tab.location.href = result.url;
           else window.location.href = result.url;
           refresh();
@@ -1212,7 +1254,9 @@
           tab?.close();
           showError(error.message);
         } finally {
-          document.querySelectorAll('#actions button').forEach(b => b.disabled = false);
+          document
+            .querySelectorAll("#actions button")
+            .forEach((b) => (b.disabled = false));
         }
       }
       async function post(url, body) {
