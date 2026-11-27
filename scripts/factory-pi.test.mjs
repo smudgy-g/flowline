@@ -4,7 +4,7 @@ import { mkdtempSync, mkdirSync, symlinkSync, rmSync, writeFileSync, chmodSync }
 import { execFileSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { authorizeTool, coderSkills, FALLBACKS, isUsageLimit, piDist, requireSkills } from './factory-pi.mjs'
+import { authorizeTool, coderSkills, fallbackReason, modelPolicy, piDist, promptWithFallback, requireSkills } from './factory-pi.mjs'
 
 test('Pi SDK resolves a normal global install, then a managed install', () => {
   const root = mkdtempSync(join(tmpdir(), 'factory-pi-install-'))
@@ -109,13 +109,44 @@ test('Pi tool guard confines reads to the worktree and the migrations repo', () 
   } finally { rmSync(root, { recursive: true, force: true }); rmSync(schema, { recursive: true, force: true }) }
 })
 
-test('a usage limit moves a call to Claude; a passing rate limit does not', () => {
-  assert.ok(isUsageLimit("You've hit your usage limit. Upgrade to Pro or try again in 3 hours."))
-  assert.ok(isUsageLimit('429 {"type":"subscription_sharing_usage_limit_exceeded"}'))
-  assert.ok(isUsageLimit('insufficient_quota'))
-  assert.ok(!isUsageLimit('429 Too Many Requests: rate limit, retry after 2s'))
-  assert.ok(!isUsageLimit(undefined))
-  assert.deepEqual(FALLBACKS, { coder: 'claude-opus-5-5', review: 'claude-opus-5-5', planner: 'claude-opus-5-5', tester: 'claude-haiku-5-5' })
+test('provider limits and outages are classified without treating bad credentials as failover', () => {
+  assert.equal(fallbackReason('insufficient_quota'), 'usage-limit')
+  assert.equal(fallbackReason('429 Too Many Requests: rate limit'), 'rate-limit')
+  assert.equal(fallbackReason('503 service unavailable'), 'unavailable')
+  assert.equal(fallbackReason('401 invalid api key'), undefined)
+  assert.equal(fallbackReason('model not found'), undefined)
+  assert.deepEqual(modelPolicy('provider/model', 'default'), {
+    primary: 'provider/model', fallbacks: [], on: ['usage-limit', 'rate-limit', 'unavailable'],
+  })
+})
+
+test('fallback walks configured models only for selected provider errors and keeps the session', async () => {
+  const used = []
+
+  const session = {
+    messages: [],
+    async setModel(model) { used.push(model.id) },
+    async prompt() {
+      this.messages.push(used.length < 2
+        ? { role: 'assistant', stopReason: 'error', errorMessage: used.length ? '503 unavailable' : '429 rate limit' }
+        : { role: 'assistant', stopReason: 'end_turn' })
+    },
+  }
+
+  const choice = { primary: 'first', fallbacks: ['second', 'third'], on: ['rate-limit', 'unavailable'] }
+  const chosen = await promptWithFallback(session, 'work', choice, id => ({ id }))
+  assert.equal(chosen.id, 'third')
+  assert.deepEqual(used, ['second', 'third'])
+  used.length = 0
+  session.messages = []
+  await assert.rejects(promptWithFallback(session, 'work', { ...choice, on: ['usage-limit'] }, id => ({ id })), /429 rate limit/)
+  assert.deepEqual(used, [])
+  session.messages = []
+
+  session.prompt = async function () { this.messages.push({ role: 'assistant', stopReason: 'error', errorMessage: '401 invalid key' }) }
+
+  await assert.rejects(promptWithFallback(session, 'work', choice, id => ({ id })), /401 invalid key/)
+  assert.deepEqual(used, [])
 })
 
 test('content tree changes with any tracked or untracked edit, not with ignored files', () => {

@@ -41,7 +41,7 @@ To bill Claude to a separate API key instead of Pi's stored login, put the key i
 
 ### Switching model accounts while a run waits
 
-A provider returning `429 rate_limit_error` means it is refusing requests _now_; signing in again may not reset its limit. You can wait for the limit to reset, sign in with another account, or choose another model/provider. The run remains at its error gate until you press **Retry**; changing models does not approve anything.
+A provider returning `429 rate_limit_error` means it is refusing requests _now_; signing in again may not reset its limit. If you configured [model fallbacks](config.md#choose-models-and-fallbacks), the same call tries them in order. Otherwise you can wait for the limit to reset, sign in with another account, or choose another model/provider. A failed run remains at its error gate until you press **Retry**; changing models does not approve anything.
 
 To switch the model for one role **while the board is still running**:
 
@@ -60,7 +60,7 @@ pi auth logout anthropic                  # only if you want to switch accounts
 pi auth login anthropic                   # interactive, stored only on the host
 ```
 
-To use a different provider, sign in via `pi auth login <provider>` and set the role with `flowline model`. The planner defaults to `anthropic/claude-opus-5-5`; coder, review and tester each have separate defaults. `FACTORY_MODEL_<ROLE>` environment variables are still available, but changing one requires a board restart; a model set in `.factory/config.json` takes precedence. Logging into another account for the _same_ provider is read afresh at the next Pi call. Neither change requires clearing run state.
+To use a different provider, sign in via `pi auth login <provider>` and set the role with `flowline model`. The planner defaults to `anthropic/claude-opus-5-5`; coder, review and tester each have separate defaults. `FACTORY_MODEL_<ROLE>` environment variables are still available as primary-model defaults, but changing one requires a board restart; a model set in `.factory/config.json` takes precedence. [Configure ordered fallbacks per role](config.md#choose-models-and-fallbacks) for usage limits, rate limits, and provider outages. Logging into another account for the _same_ provider is read afresh at the next Pi call. Neither change requires clearing run state.
 
 ### Git over SSH from the board
 

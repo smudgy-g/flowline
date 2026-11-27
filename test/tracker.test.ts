@@ -126,6 +126,16 @@ test('model switches are read from the project at each call without restarting t
   assert.equal(config.base, 'main', 'other settings remain pinned for the board lifetime');
   await writeFile(file, JSON.stringify({ ...JSON.parse(original), models: { planner: 'openai-codex/gpt-6.2-sol' } }));
   assert.equal(currentModels().planner, 'openai-codex/gpt-6.2-sol');
+  await writeFile(file, JSON.stringify({ ...JSON.parse(original), models: {
+    coder: { primary: 'provider/first', fallbacks: ['other/second'] },
+  } }));
+  assert.deepEqual(currentModels().coder, {
+    primary: 'provider/first', fallbacks: ['other/second'], on: ['usage-limit', 'rate-limit', 'unavailable'],
+  });
+  await setModel('coder', 'provider/third');
+  assert.deepEqual(currentModels().coder, {
+    primary: 'provider/third', fallbacks: ['other/second'], on: ['usage-limit', 'rate-limit', 'unavailable'],
+  });
   await assert.rejects(setModel('other' as 'planner', 'x'));
 });
 

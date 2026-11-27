@@ -14,7 +14,7 @@ Run the board with `flowline board` (a Hono server on loopback), and reach a rem
 - **Reviewers return JSON findings;** critical and high block, and an unparseable reply waits for `flowline findings`. The standard lane adds plan reviewers and `skills.codeReviewers`.
 - **One approval covers the outcome,** bound to a fingerprint of the tested files computed on the host; if anything changes while the gate waits, it asks again. Sensitive files (`paths.sensitive`) are listed there.
 - **Errors wait instead of failing.** A step that throws waits as `error`: fix the cause and `flowline retry`, or use **Recreate sandbox** on the card when the sandbox is the problem. Pauses are files in the state directory's `paused/`, so they survive a restart.
-- **Models per role** come from `scripts/factory-pi.mjs` (`MODELS`, `FALLBACKS`, `FACTORY_MODEL_<ROLE>`), and run on the host: a sandbox never holds credentials.
+- **Models per role** come from `.factory/config.json` (or built-in defaults). Ordered fallbacks handle configured provider limits and outages; model calls run on the host, so a sandbox never holds credentials.
 
 ## Limits
 

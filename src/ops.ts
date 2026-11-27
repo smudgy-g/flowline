@@ -627,7 +627,7 @@ export const realOps: Ops = {
         FACTORY_CODER_SKILLS: JSON.stringify(config.skills.coder),
         FACTORY_STATE_ROOT: stateRoot,
         FACTORY_PROJECT: projectRoot,
-        ...(selected ? { [`FACTORY_MODEL_${role.toUpperCase()}`]: selected } : {}),
+        ...(selected ? { FACTORY_MODEL_POLICY: JSON.stringify(selected) } : {}),
       },
     );
   },

@@ -99,7 +99,6 @@ function changedPaths(worktree) {
 }
 
 const installRoot = resolve(dirname(new URL(import.meta.url).pathname), '..')
-const stateRoot = process.env.FACTORY_STATE_ROOT ?? join(installRoot, '.cache')
 
 // Installed, the factory is compiled JavaScript; in its own checkout it is TypeScript Node strips as it loads.
 const factoryModule = name =>
@@ -169,9 +168,8 @@ export async function loadFactoryResources(worktree, role = 'review') {
 }
 
 /**
- * The model each role runs on, as `provider/id`; a bare id is on the Codex login (no per-use cost; bigger models use
- * the subscription's limits faster). The planner runs on Claude through the factory's Anthropic API key (billed per
- * token). FACTORY_MODEL_<ROLE> overrides one, e.g. FACTORY_MODEL_PLANNER=gpt-6.2-sol; `pi --list-models` shows the choices.
+ * Default models, overridable per role in project config. A bare id uses the Codex login.
+ * `pi --list-models` shows the available choices.
  */
 const DEFAULT_MODELS = { coder: 'gpt-6.1-terra', review: 'gpt-6.2-sol', planner: 'anthropic/claude-opus-5-5', tester: 'gpt-6-luna' }
 export const MODELS = Object.fromEntries(['coder', 'tester', 'review', 'planner'].map(role =>
@@ -183,28 +181,57 @@ export function modelSpec(spec) {
   return slash < 0 ? ['openai-codex', spec] : [spec.slice(0, slash), spec.slice(slash + 1)]
 }
 
-/**
- * When the Codex subscription hits its usage limit, a Codex call moves to the role's Claude fallback, if the worker has
- * Anthropic auth. FACTORY_FALLBACK_<ROLE> overrides one. `anthropicKeyFile`, when it exists, holds an API key used for
- * this process only, so Claude calls are billed to the factory's key instead of a stored login.
- */
-const FALLBACK_MODELS = { coder: 'claude-opus-5-5', review: 'claude-opus-5-5', planner: 'claude-opus-5-5', tester: 'claude-haiku-5-5' }
-export const FALLBACKS = Object.fromEntries(Object.keys(FALLBACK_MODELS).map(role =>
-  [role, process.env[`FACTORY_FALLBACK_${role.toUpperCase()}`] || FALLBACK_MODELS[role]]))
+/** A key here overrides Pi's stored Anthropic login for this process only. */
 const anthropicKeyFile = join(homedir(), '.config/factory/anthropic-api-key')
 
-/** A subscription's usage limit (it resets after hours), as against a transient rate limit Pi retries itself. */
-export const isUsageLimit = (message = '') => /usage.?limit|insufficient_quota|quota exceeded|out of budget/i.test(message)
+/** Classify provider failures, never configuration/authentication failures. */
+export function fallbackReason(message = '') {
+  if (/usage.?limit|insufficient_quota|quota exceeded|out of budget/i.test(message)) return 'usage-limit'
 
-// Once Codex is out, later calls go straight to the fallback until the limit should have reset.
-const limitFile = `${stateRoot}/pi-limits/openai-codex`
-const LIMIT_HOURS = 1 // ponytail: fixed wait; read the reset time from the error if Codex sends one we can rely on
+  if (/\b429\b|rate.?limit|too many requests/i.test(message)) return 'rate-limit'
 
-const codexOut = () => { try { return Date.now() < Date.parse(readFileSync(limitFile, 'utf8')) } catch { return false } }
+  if (/\b(?:502|503|504)\b|service unavailable|temporarily unavailable|overloaded|connection (?:reset|refused)|fetch failed/i.test(message)) return 'unavailable'
 
-function markCodexOut() {
-  mkdirSync(dirname(limitFile), { recursive: true })
-  writeFileSync(limitFile, new Date(Date.now() + LIMIT_HOURS * 3600_000).toISOString())
+  return undefined
+}
+
+export function modelPolicy(choice, defaultModel) {
+  return typeof choice === 'string' || !choice
+    ? { primary: choice || defaultModel, fallbacks: [], on: ['usage-limit', 'rate-limit', 'unavailable'] }
+    : choice
+}
+
+/** Continue the same session so a fallback retains work already done by earlier models. */
+export async function promptWithFallback(session, instruction, policy, selectModel) {
+  let model = selectModel(policy.primary)
+  const lastReply = () => session.messages.filter(message => message.role === 'assistant').at(-1)
+  let failure
+
+  try { await session.prompt(instruction) } catch (error) { failure = error }
+
+  for (const spec of policy.fallbacks) {
+    const last = lastReply()
+    const reason = fallbackReason(String(failure?.message ?? last?.errorMessage ?? ''))
+
+    if (!reason || !policy.on.includes(reason) || (!failure && last?.stopReason !== 'error')) break
+
+    const next = selectModel(spec)
+
+    await session.setModel(next)
+    model = next
+    failure = undefined
+
+    try {
+      await session.prompt('The previous model could not complete the call. Continue from where it stopped; edits so far are in the worktree.')
+    } catch (error) { failure = error }
+  }
+
+  const last = lastReply()
+
+  if (failure || !last || last.stopReason === 'error' || last.stopReason === 'aborted')
+    throw new Error(`Pi did not finish successfully: ${failure?.message ?? last?.errorMessage ?? last?.stopReason ?? 'no reply'}`)
+
+  return model
 }
 
 export function requireSkills(loader, names) {
@@ -259,14 +286,18 @@ async function main() {
   // A runtime key overrides the stored Anthropic login for this process only, and is never written to auth.json.
   if (key) await runtime.setRuntimeApiKey('anthropic', key)
 
-  const [provider, id] = modelSpec(MODELS[role] ?? MODELS.coder)
+  const policy = modelPolicy(process.env.FACTORY_MODEL_POLICY && JSON.parse(process.env.FACTORY_MODEL_POLICY), MODELS[role] ?? MODELS.coder)
 
-  const fallback = provider === 'openai-codex' && runtime.hasConfiguredAuth('anthropic')
-    ? runtime.getModel('anthropic', FALLBACKS[role] ?? FALLBACKS.coder) : undefined
+  const selectModel = spec => {
+    const [provider, id] = modelSpec(spec)
+    const selected = runtime.getModel(provider, id)
 
-  let model = fallback && codexOut() ? fallback : runtime.getModel(provider, id)
+    if (!selected || !runtime.hasConfiguredAuth(provider)) throw new Error(`Pi model/auth unavailable: ${spec}`)
 
-  if (!model || !runtime.hasConfiguredAuth(model.provider)) throw new Error('Pi model/auth unavailable')
+    return selected
+  }
+
+  let model = selectModel(policy.primary)
 
   const { session } = await sdk.createAgentSession({
     cwd: worktree, model, modelRuntime: runtime, resourceLoader: loader,
@@ -278,23 +309,12 @@ async function main() {
   const timer = setTimeout(() => { void session.abort() }, 30 * 60 * 1000)
 
   try {
-    const lastReply = () => session.messages.filter(message => message.role === 'assistant').at(-1)
-    await session.prompt(instruction)
+    model = await promptWithFallback(session, instruction, policy, selectModel)
 
-    // Codex ran out mid-call: the same session goes on with Claude, keeping what it read and wrote so far.
-    if (fallback && model !== fallback && lastReply()?.stopReason === 'error' && isUsageLimit(lastReply().errorMessage)) {
-      markCodexOut()
-      model = fallback
-      await session.setModel(fallback)
-      await session.prompt('Your model hit its usage limit and you were switched to another. Carry on with the task from where you stopped; your edits so far are in the worktree.')
-    }
+    // Keep the answer parseable while recording which model actually ran in the history.
+    const note = `${model.provider}/${model.id}` === `${modelSpec(policy.primary).join('/')}`
+      ? '' : `(Fallback model: ${model.provider}/${model.id}.)\n\n`
 
-    const last = lastReply()
-
-    if (!last || last.stopReason === 'error' || last.stopReason === 'aborted') throw new Error(`Pi did not finish successfully: ${last?.errorMessage ?? last?.stopReason ?? 'no reply'}`)
-
-    // Said first, so the history shows it; the factory reads JSON blocks and the "Unfinished steps" line from the end.
-    const note = model !== fallback ? '' : `(Codex is at its usage limit: this ran on ${model.id}.)\n\n`
     process.stdout.write(note + (session.getLastAssistantText() || ''))
   } finally { clearTimeout(timer); session.dispose() }
 }

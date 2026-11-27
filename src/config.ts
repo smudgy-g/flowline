@@ -44,7 +44,15 @@ const Command = z.tuple([z.string().trim().min(1)]).rest(z.string());
 const ProjectPath = z.string().regex(/^(?!.*(?:^|\/)\.\.(?:\/|$))[a-zA-Z0-9_.][a-zA-Z0-9_./-]*$/);
 const Role = z.enum(["planner", "coder", "review", "tester"]);
 const Model = z.string().trim().min(1);
-const Models = z.strictObject({ planner: Model.optional(), coder: Model.optional(), review: Model.optional(), tester: Model.optional() });
+const FallbackReason = z.enum(["usage-limit", "rate-limit", "unavailable"]);
+
+const ModelChoice = z.union([Model, z.strictObject({
+  primary: Model,
+  fallbacks: z.array(Model).default([]),
+  on: z.array(FallbackReason).default(["usage-limit", "rate-limit", "unavailable"]),
+})]);
+
+const Models = z.strictObject({ planner: ModelChoice.optional(), coder: ModelChoice.optional(), review: ModelChoice.optional(), tester: ModelChoice.optional() });
 export type ModelRole = z.infer<typeof Role>;
 
 const Config = z.strictObject({
@@ -136,7 +144,9 @@ export async function setModel(role: ModelRole, model: string) {
   Role.parse(role);
   Model.parse(model);
   const profile = JSON.parse(readFileSync(configFile, "utf8"));
-  profile.models = { ...currentModels(), [role]: model };
+  const previous = currentModels()[role];
+  profile.models = { ...currentModels(), [role]: typeof previous === "string" || !previous
+    ? model : { ...previous, primary: model } };
   const temp = `${configFile}.${process.pid}.tmp`;
   await writeFile(temp, `${JSON.stringify(profile, null, 2)}\n`);
   await rename(temp, configFile);

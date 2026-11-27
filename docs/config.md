@@ -48,6 +48,23 @@ Only set `acceptance.assets` if you actually stage files there; declaring it doe
 
 For other languages, see the [Go-shaped example](../examples/go.factory.json), but replace its example kit image with one you actually have. Leave optional settings alone at first: `worktrees` overrides the default task checkout location under `~/.local/state/flowline/<project>/worktrees/`; existing registered worktrees in the old sibling directory continue there until cleaned up; `readable` allows agent reads outside the worktree; `skills` selects agent skill packs; `models` chooses provider/model per role; `commands.preview` starts a sandbox preview; `acceptance.inputs` lists files archived from the base branch for UAT, and `acceptance.command` replaces the default adapter command. `repo` overrides the project name inferred from `origin`. `tracker.env`, `commands.env` and `acceptance.env` contain **public** settings, never credentials. To switch a role model mid-run, use `flowline model <role> <provider/model>` and press Retry; other config changes require a board restart.
 
+## Choose models and fallbacks
+
+Pi runs agents on the host using credentials you signed in with (`pi --list-models` shows available models). The `planner` writes plans, `coder` implements, `review` checks plans and code, and `tester` writes tests. Set a role to a `provider/model` string for a single model, or configure an ordered fallback list:
+
+```json
+{
+  "models": {
+    "coder": {
+      "primary": "provider-a/model-x",
+      "fallbacks": ["provider-b/model-y"]
+    }
+  }
+}
+```
+
+By default, fallbacks run on `usage-limit`, `rate-limit`, or `unavailable` errors. To narrow that down, add `"on": ["usage-limit"]` (or any subset of those three). Unknown models and invalid credentials are errors, not fallback reasons. No fallback is chosen automatically: leave `fallbacks` empty to wait for a fix instead. A fallback continues the same Pi session, including any edits already made. Check the run log to see which model finished the call. `flowline model coder provider/model` changes the primary model while preserving its fallback settings; press Retry on a paused run. Only model choices hot-reload; other config changes require a board restart. Never put credentials in project config.
+
 ## Write a first work item
 
 With the default local tracker, click **New item** on the board or create `.factory/items/first-task.md`:
