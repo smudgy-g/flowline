@@ -54,4 +54,4 @@ A machine Docker Sandboxes supports (Ubuntu 24.04+ with KVM, Apple-silicon macOS
 
 ## Development
 
-`pnpm run format` fixes blank-line spacing in TypeScript/JavaScript and formats the README, `docs/`, and the board HTML without wrapping prose. `pnpm run check` enforces those rules, type-checks, and runs the tests with fake side effects. [docs/internals.md](docs/internals.md) is the implementation map.
+`pnpm run format` fixes blank-line spacing in TypeScript/JavaScript and formats the README, `docs/`, and the board HTML without wrapping prose. `pnpm run check` enforces those rules, type-checks, and runs the tests with fake side effects. [docs/internals.md](docs/internals.md) is the implementation map. [Future improvements](docs/future.md) lists ideas not yet supported.
