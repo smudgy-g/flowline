@@ -916,11 +916,13 @@
               ? `<button class="btn primary" onclick="cleanUp(false)">Clean up</button>`
               : "") +
               (c.prUrl
-                ? `<a class="btn${c.merged || c.githubCompareUrl ? "" : " primary"}" style="text-decoration:none;padding:8px 16px;border-radius:6px" href="${esc(c.prUrl)}" target="_blank">${c.githubCompareUrl ? 'Open delivery note' : 'Open the change'}</a>`
+                ? `<a class="btn${c.merged || c.githubRepo ? "" : " primary"}" style="text-decoration:none;padding:8px 16px;border-radius:6px" href="${esc(c.prUrl)}" target="_blank">${c.githubRepo ? 'Open delivery note' : 'Open the change'}</a>`
                 : "") +
-              (c.githubCompareUrl && !c.merged
-                ? `<a class="btn primary" style="text-decoration:none;padding:8px 16px;border-radius:6px" href="${esc(c.githubCompareUrl)}" target="_blank" rel="noopener noreferrer">Create GitHub PR…</a>`
-                : "") +
+              (c.githubPrUrl
+                ? `<a class="btn primary" style="text-decoration:none;padding:8px 16px;border-radius:6px" href="${esc(c.githubPrUrl)}" target="_blank" rel="noopener noreferrer">Open GitHub PR</a>`
+                : c.githubRepo && !c.merged
+                  ? `<button class="btn primary" onclick="openGithubPr()">Create draft PR…</button>`
+                  : "") +
               (c.merged ? "" : abandonButton),
           ];
 
@@ -1193,6 +1195,25 @@
       }
       async function startItem(at, item) {
         await post(`${at}/board/start/${encodeURIComponent(item)}`, {});
+      }
+      async function openGithubPr() {
+        const c = opened();
+        const tab = window.open('', '_blank'); // Open synchronously so popup blockers do not swallow the PR.
+        if (tab) tab.opener = null;
+        document.querySelectorAll('#actions button').forEach(b => b.disabled = true);
+        try {
+          const response = await fetch(`${c.at}/board/github-pr/${encodeURIComponent(c.issue)}`, { method: 'POST' });
+          const result = await response.json();
+          if (!response.ok) throw new Error(result.error ?? response.statusText);
+          if (tab) tab.location.href = result.url;
+          else window.location.href = result.url;
+          refresh();
+        } catch (error) {
+          tab?.close();
+          showError(error.message);
+        } finally {
+          document.querySelectorAll('#actions button').forEach(b => b.disabled = false);
+        }
       }
       async function post(url, body) {
         document

@@ -5,6 +5,8 @@
 // Like `frankenstein approve`, this guards against mistakes, not against an agent with a shell in the VM (README.md).
 import { readFile } from "node:fs/promises";
 import { execFileSync } from "node:child_process";
+import { join } from 'node:path';
+import { githubRepo, openLocalPr, prInNote } from './local-pr.ts';
 import { registerApiRoute } from "@mastra/core/server";
 import type { LaneState } from "./fast-lane.ts";
 import {
@@ -46,13 +48,6 @@ import {
   type ResumeData,
   type RunView,
 } from "./runs.ts";
-
-/** Local delivery is a note; for GitHub remotes also offer a browser link to create the PR by hand. */
-export function githubCompareUrl(remote: string, base: string, branch: string): string | undefined {
-  const match = /^(?:git@(?:github\.com(?:-[\w-]+)?|ssh\.github\.com):|https:\/\/github\.com\/)([\w.-]+\/[\w.-]+?)(?:\.git)?$/.exec(remote);
-  if (!match) return undefined;
-  return `https://github.com/${match[1]}/compare/${encodeURIComponent(base)}...${encodeURIComponent(branch)}?expand=1`;
-}
 
 const githubRemote = (() => {
   try { return execFileSync('git', ['remote', 'get-url', 'origin'], { cwd: config.checkout, encoding: 'utf8' }).trim(); }
@@ -119,7 +114,8 @@ export type Card = {
   waiting?: RunView["waiting"];
   error?: string;
   prUrl?: string;
-  githubCompareUrl?: string;
+  githubRepo?: string;
+  githubPrUrl?: string;
   merged?: boolean;
   /** At an approval: the factory's UAT journeys changed since this run's were pinned. */
   newerUat?: { head: string; files: string[] };
@@ -255,16 +251,21 @@ export async function card(
           : undefined,
     };
   }
-  if (v.status === "success")
+  if (v.status === "success") {
+    const repo = v.prUrl?.startsWith('file://') && lane?.workItem ? githubRepo(githubRemote) : undefined;
+    const note = repo && lane?.workItem
+      ? await readFile(join(config.checkout, '.factory/delivered', `${lane.workItem}.md`), 'utf8').catch(() => '')
+      : '';
     return {
       ...base,
       column: "Draft PR",
       kind: "done",
       status: v.prUrl?.startsWith('file://') ? 'Change delivered' : 'Draft PR open',
       prUrl: v.prUrl,
-      githubCompareUrl: v.prUrl?.startsWith('file://') && lane?.workItem
-        ? githubCompareUrl(githubRemote, lane.base, lane.workItem) : undefined,
+      githubRepo: repo,
+      githubPrUrl: repo ? prInNote(note, repo) : undefined,
     };
+  }
   if (v.status === "running")
     return {
       ...base,
@@ -468,6 +469,29 @@ export function boardRoutes(factory: () => Factory) {
           allPaused,
           issuesError: issues.error,
         });
+      },
+    }),
+
+    registerApiRoute('/board/github-pr/:issue', {
+      method: 'POST',
+      requiresAuth: false,
+      handler: async c => {
+        const issue = itemId(c.req.param('issue'));
+        const runId = runIdFor(issue);
+        const [v, lane] = await Promise.all([view(factory(), runId), laneState(factory(), runId)]);
+        const repo = githubRepo(githubRemote);
+        const file = lane?.workItem && join(config.checkout, '.factory/delivered', `${lane.workItem}.md`);
+        if (!repo || !file || v?.status !== 'success' || v.prUrl !== `file://${file}` || busy.has(runId))
+          return c.json({ error: 'No finished local change to open on GitHub' }, 409);
+        busy.add(runId);
+        try {
+          const url = await openLocalPr(repo, lane.base, lane.workItem, file);
+          return c.json({ url });
+        } catch (error) {
+          return c.json({ error: (error as Error).message }, 500);
+        } finally {
+          busy.delete(runId);
+        }
       },
     }),
 
