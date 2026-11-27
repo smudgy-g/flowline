@@ -120,17 +120,9 @@ cd ~/code/your-project
 frankenstein setup
 ```
 
-It writes `.factory/config.json`, `.factory/items/`, an acceptance stub and `.factory/.gitignore`, then reports
-what your machine is still missing. It never touches anything outside `.factory/`, and never overwrites what is
-already there. The nested ignore file excludes only `assets/` (downloaded acceptance inputs that are rebuilt
-locally) and `claims/` (temporary work-item locks that must not be shared across clones). An existing
-`.factory/.gitignore` is left alone: add those two patterns yourself if they are absent. If your assets live
-elsewhere, ignore that path in your project's own `.gitignore`.
+It writes `.factory/config.json`, `.factory/items/`, an acceptance stub and `.factory/.gitignore`, then reports what your machine is still missing. It never touches anything outside `.factory/`, and never overwrites what is already there. The nested ignore file excludes only `assets/` (downloaded acceptance inputs that are rebuilt locally) and `claims/` (temporary work-item locks that must not be shared across clones). An existing `.factory/.gitignore` is left alone: add those two patterns yourself if they are absent. If your assets live elsewhere, ignore that path in your project's own `.gitignore`.
 
-**Do not ignore `.factory/` itself.** Version the config, acceptance adapter, setup scripts, work items and the
-nested ignore file. For the local tracker, `.factory/items/*.closed` records completed items; delivery notes under
-`.factory/delivered/` can be kept for an audit trail, but review them before committing since they may contain
-machine-local paths.
+**Do not ignore `.factory/` itself.** Version the config, acceptance adapter, setup scripts, work items and the nested ignore file. For the local tracker, `.factory/items/*.closed` records completed items; delivery notes under `.factory/delivered/` can be kept for an audit trail, but review them before committing since they may contain machine-local paths.
 
 Your repository needs an `origin` remote: the factory pushes each task branch to it, and acceptance tests the
 **pushed** commit. `origin` may be a bare repository on the same machine — nothing here needs a forge.
@@ -207,8 +199,7 @@ the id is the file name, so `.factory/items/basket-discount.md` is item `basket-
 fast lane
 ```
 
-**New item** on the board writes one for you, through whichever tracker you configured. See the [work-item
-examples](config.md#write-a-first-work-item) for the local and GitHub trackers. Keep `.factory/**` in
+**New item** on the board writes one for you, through whichever tracker you configured. See the [work-item examples](config.md#write-a-first-work-item) for the local and GitHub trackers. Keep `.factory/**` in
 `paths.protected` so a task cannot edit its own work item.
 
 ## 7. Run it
