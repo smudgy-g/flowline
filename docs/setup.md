@@ -120,8 +120,17 @@ cd ~/code/your-project
 frankenstein setup
 ```
 
-It writes `.factory/config.json`, `.factory/items/`, and an acceptance stub, then reports what your machine is
-still missing. It never touches anything outside `.factory/`, and never overwrites what is already there.
+It writes `.factory/config.json`, `.factory/items/`, an acceptance stub and `.factory/.gitignore`, then reports
+what your machine is still missing. It never touches anything outside `.factory/`, and never overwrites what is
+already there. The nested ignore file excludes only `assets/` (downloaded acceptance inputs that are rebuilt
+locally) and `claims/` (temporary work-item locks that must not be shared across clones). An existing
+`.factory/.gitignore` is left alone: add those two patterns yourself if they are absent. If your assets live
+elsewhere, ignore that path in your project's own `.gitignore`.
+
+**Do not ignore `.factory/` itself.** Version the config, acceptance adapter, setup scripts, work items and the
+nested ignore file. For the local tracker, `.factory/items/*.closed` records completed items; delivery notes under
+`.factory/delivered/` can be kept for an audit trail, but review them before committing since they may contain
+machine-local paths.
 
 Your repository needs an `origin` remote: the factory pushes each task branch to it, and acceptance tests the
 **pushed** commit. `origin` may be a bare repository on the same machine — nothing here needs a forge.
@@ -246,7 +255,7 @@ directory and name it in `acceptance.assets`; the factory mounts it read-only as
 ```sh
 mkdir -p .factory/assets
 curl -fsSL https://nodejs.org/dist/v22.19.0/node-v22.19.0-linux-x64.tar.gz -o .factory/assets/node-linux-x64.tar.gz
-echo '.factory/assets/' >> .gitignore      # assets are big; keep them out of git
+# setup already ignored .factory/assets/ via .factory/.gitignore; no root .gitignore change needed
 ```
 
 The adapter gets `$REPO`, `$REF`, `$COMMIT`, `$INPUTS` (its own directory, read-only, as the working directory),

@@ -41,6 +41,13 @@ export async function setup(baseArg?: string) {
     ok(`.factory/config.json (base branch "${base}")`);
   }
 
+  const ignore = join(dir, ".gitignore");
+  if (existsSync(ignore)) warn(".factory/.gitignore exists; leaving it alone (ignore assets/ and claims/ if needed)");
+  else {
+    await writeFile(ignore, "# Downloaded acceptance toolchains and caches (rebuild locally).\nassets/\n# Local work-item locks (never share across clones).\nclaims/\n");
+    ok(".factory/.gitignore (local assets and claims only)");
+  }
+
   await mkdir(join(dir, "items"), { recursive: true });
   await mkdir(join(dir, "acceptance"), { recursive: true });
   const adapter = join(dir, "acceptance/run.sh");
@@ -57,8 +64,10 @@ Next:
   1. Fill in commands.gates in .factory/config.json: the checks a change must pass.
   2. Name a sandbox.kit carrying your toolchain, and list in sandbox.allowlist the hosts its setup may reach.
   3. Write .factory/acceptance/run.sh, the black-box check of a pushed commit (docs/setup.md).
-  4. Commit .factory and push it to ${base}. Each work item is built in a fresh worktree of origin/${base}, so
-     anything a sandbox runs — the acceptance adapter, any setup script — must be on that branch, not only here.
+  4. Commit .factory (including .factory/.gitignore) and push it to ${base}. Do not ignore .factory/ itself:
+     worktrees need the config, scripts and acceptance adapter. If acceptance.assets lives outside .factory/assets/,
+     add that directory to your project's .gitignore separately. Claims are local locks; never commit them.
+     Each work item is built in a fresh worktree of origin/${base}, so anything a sandbox runs must be on that branch.
   5. Describe a work item in .factory/items/<name>.md, then: frankenstein board`);
 }
 
