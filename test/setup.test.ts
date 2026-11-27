@@ -20,7 +20,7 @@ test('setup ignores only local assets and claims, without overwriting existing i
   const setup = () => execFileSync(process.execPath, [cli, 'setup'], {
     cwd: root, encoding: 'utf8', env: { ...process.env, PATH: `${bin}:${process.env.PATH}` },
   });
-  setup();
+  assert.match(setup(), /Next \(examples and explanations: .*docs\/config\.md\)/);
   const ignore = join(root, '.factory/.gitignore');
   const original = await readFile(ignore, 'utf8');
   assert.match(original, /^assets\/$/m);

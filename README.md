@@ -14,7 +14,7 @@ frankenstein board stop   # stops only this project's background board
 
 Each work item runs in **its own Docker Sandbox** (`sbx`): a microVM with its own kernel and Docker engine. The factory itself — board, run database, git, credentials and the Pi agents — stays on your machine. Every command that executes project code (install, fixes, checks, tests, preview, acceptance) runs inside the item's sandbox, so agent-written code never runs on your host and one work item cannot touch another.
 
-[docs/setup.md](docs/setup.md) is the full walkthrough, written from a real setup, with every failure it produced and the fix.
+Start with [the config and first-work-item guide](docs/config.md); [the full setup walkthrough](docs/setup.md) covers the machine, acceptance adapter and troubleshooting.
 
 ## What lives where
 
@@ -26,7 +26,7 @@ Each work item runs in **its own Docker Sandbox** (`sbx`): a microVM with its ow
 
 ## Configure
 
-`.factory/config.json` is the whole of it; `frankenstein setup` writes a starting point.
+`.factory/config.json` is the whole of it; `frankenstein setup` writes a starting point. [How to choose each setting](docs/config.md).
 
 - `base` is the branch work starts from and changes are aimed at; `worktrees` says where task worktrees go.
 - `commands` are what the factory runs in a work item's sandbox: `setup` prepares a fresh worktree, `autofix` runs formatters, `check` is the coder's fast feedback, and `gates` are the required checks including the full suite. Each is a **list of commands**, each command an executable plus literal arguments, never a shell string. `{changedCode}` expands to changed files matching `changedCode` globs.

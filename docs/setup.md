@@ -159,7 +159,8 @@ and `sbx` silently uses `sandbox.image` instead. Until that lands there are two 
 
 ## 5. The configuration
 
-`.factory/config.json`, as used here:
+If the setup prompts are unfamiliar, start with the [field-by-field config and work-item guide](config.md).
+This walkthrough's `.factory/config.json` looks like:
 
 ```json
 {
@@ -206,7 +207,8 @@ the id is the file name, so `.factory/items/basket-discount.md` is item `basket-
 fast lane
 ```
 
-**New item** on the board writes one for you, through whichever tracker you configured. Keep `.factory/**` in
+**New item** on the board writes one for you, through whichever tracker you configured. See the [work-item
+examples](config.md#write-a-first-work-item) for the local and GitHub trackers. Keep `.factory/**` in
 `paths.protected` so a task cannot edit its own work item.
 
 ## 7. Run it

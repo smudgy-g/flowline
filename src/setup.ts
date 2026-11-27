@@ -60,15 +60,15 @@ export async function setup(baseArg?: string) {
   for (const [what, check] of checks(root)) (check() ? ok : warn)(what);
 
   console.log(`
-Next:
-  1. Fill in commands.gates in .factory/config.json: the checks a change must pass.
-  2. Name a sandbox.kit carrying your toolchain, and list in sandbox.allowlist the hosts its setup may reach.
-  3. Write .factory/acceptance/run.sh, the black-box check of a pushed commit (docs/setup.md).
+Next (examples and explanations: ${join(installRoot, "docs/config.md")}):
+  1. In .factory/config.json, replace the placeholder commands.gates with your project's real checks and tests.
+  2. Choose a sandbox.kit with your tools, or install them in commands.setup; allow only the download hosts needed.
+  3. Replace .factory/acceptance/run.sh with a real offline check of the pushed commit (the stub cannot pass).
   4. Commit .factory (including .factory/.gitignore) and push it to ${base}. Do not ignore .factory/ itself:
      worktrees need the config, scripts and acceptance adapter. If acceptance.assets lives outside .factory/assets/,
      add that directory to your project's .gitignore separately. Claims are local locks; never commit them.
      Each work item is built in a fresh worktree of origin/${base}, so anything a sandbox runs must be on that branch.
-  5. Describe a work item in .factory/items/<name>.md, then: frankenstein board`);
+  5. Describe a work item in .factory/items/<name>.md (or use New item on the board), then: frankenstein board start`);
 }
 
 function gitRoot() {
