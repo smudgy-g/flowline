@@ -1,10 +1,45 @@
 import { test } from 'node:test'
 import { strict as assert } from 'node:assert'
-import { mkdtempSync, mkdirSync, symlinkSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, symlinkSync, rmSync, writeFileSync, chmodSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { authorizeTool, coderSkills, FALLBACKS, isUsageLimit, requireSkills } from './factory-pi.mjs'
+import { authorizeTool, coderSkills, FALLBACKS, isUsageLimit, piDist, requireSkills } from './factory-pi.mjs'
+
+test('Pi SDK resolves a normal global install, then a managed install', () => {
+  const root = mkdtempSync(join(tmpdir(), 'factory-pi-install-'))
+  const bin = join(root, 'bin')
+  const globalRoot = join(root, 'global')
+  const dist = join(globalRoot, '@earendil-works/pi-coding-agent/dist')
+  const managed = join(root, 'managed')
+  const oldPath = process.env.PATH
+  const oldManaged = process.env.PI_MANAGED_INSTALL_ROOT
+
+  try {
+    mkdirSync(bin)
+    mkdirSync(dist, { recursive: true })
+    writeFileSync(join(dist, 'index.js'), '')
+    writeFileSync(join(bin, 'npm'), `#!/bin/sh\necho '${globalRoot}'\n`)
+    chmodSync(join(bin, 'npm'), 0o755)
+    process.env.PATH = `${bin}:${oldPath}`
+    delete process.env.PI_MANAGED_INSTALL_ROOT
+    assert.equal(piDist(), dist)
+
+    process.env.PI_MANAGED_INSTALL_ROOT = managed
+    assert.throws(() => piDist(), /Pi SDK not found/)
+
+    mkdirSync(managed)
+    writeFileSync(join(managed, 'current-version'), '1.6.1\n')
+    assert.equal(piDist(), join(managed, 'releases/1.6.1/node_modules/@earendil-works/pi-coding-agent/dist'))
+  } finally {
+    process.env.PATH = oldPath
+
+    if (oldManaged === undefined) delete process.env.PI_MANAGED_INSTALL_ROOT
+    else process.env.PI_MANAGED_INSTALL_ROOT = oldManaged
+
+    rmSync(root, { recursive: true, force: true })
+  }
+})
 
 test('coder selects test and domain skills by changed path; missing skills stop dispatch', () => {
   const coder = {

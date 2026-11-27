@@ -35,17 +35,7 @@ flowline --help
 
 Until `flowline` is published to npm, run `npm install --global .` from a Flowline checkout instead. Pi runs the planner, coder, tester and reviewers on the host. Sign in interactively with `pi`, then use `pi --list-models` to see your available models. Model calls use the credentials you signed in with; don't paste credentials into project files.
 
-**Pi install layout (currently required):** Flowline loads Pi as a library, and a plain npm global install lacks Pi's managed-install directory. After installing Pi globally, make that directory point to your installation:
-
-```sh
-pkg=$(npm root -g)/@earendil-works/pi-coding-agent
-ver=$(node -p "require('$pkg/package.json').version")
-mkdir -p ~/.pi/agent/install/releases/$ver/node_modules/@earendil-works
-ln -sfn "$pkg" ~/.pi/agent/install/releases/$ver/node_modules/@earendil-works/pi-coding-agent
-echo "$ver" > ~/.pi/agent/install/current-version
-```
-
-You only need to repeat this when upgrading Pi. `flowline setup` checks for the managed install; `PI_MANAGED_INSTALL_ROOT` overrides its location. Flowline provides default models, so you can skip model configuration initially. To choose others later, use `flowline model <role> <provider/model>` in your project (see below).
+`flowline setup` checks for Pi. A normal global npm install works; existing Pi managed installations also work. `PI_MANAGED_INSTALL_ROOT` selects a managed installation explicitly if needed. Flowline provides default models, so you can skip model configuration initially. To choose others later, use `flowline model <role> <provider/model>` in your project (see below).
 
 To bill Claude to a separate API key instead of Pi's stored login, put the key in `~/.config/factory/anthropic-api-key`; it is used for that process only and never written to `auth.json`. **That file takes precedence over a newly signed-in Anthropic account**: remove or move it first if switching accounts. Never paste keys or the contents of `auth.json` into a work item.
 
@@ -242,7 +232,7 @@ Every one of these came up during a real setup.
 | `Not inside a git repository` | `setup` needs a checkout with an `origin` remote | `git init` and add `origin` |
 | `provision failed: Invalid task branch` | The branch name has characters the factory refuses | Check the item id: `[A-Za-z0-9._-]`, no `..` |
 | `Invalid sandbox work item` | Same, for the sandbox name | Same |
-| `ENOENT … .pi/agent/install/current-version` | Pi is installed but not as a managed install | Step 2's symlink and `current-version` |
+| `Pi SDK not found` | Flowline cannot find Pi in the active npm global install or the managed-install directory | Install Pi with `npm install --global @earendil-works/pi-coding-agent` on the host, or check `PI_MANAGED_INSTALL_ROOT` |
 | `Worker needs an exclusive deny-all network policy` | `sbx policy init deny-all` was never run, or another project widened it | Re-run it; give the machine its own daemon |
 | `node: command not found` inside a sandbox | The kit has no Node | Step 4: install it in `setup`, or publish an image that has it |
 | `tar … xz: Cannot exec` inside a sandbox | The kit has no `xz` | Fetch the `.tar.gz` build |

@@ -17,9 +17,14 @@ test('setup ignores only local assets and claims, without overwriting existing i
   await mkdir(bin);
   await writeFile(join(bin, 'sbx'), '#!/bin/sh\nexit 1\n');
   await chmod(join(bin, 'sbx'), 0o755);
+  const global = join(root, 'global');
+  await mkdir(join(global, '@earendil-works/pi-coding-agent/dist'), { recursive: true });
+  await writeFile(join(global, '@earendil-works/pi-coding-agent/dist/index.js'), '');
+  await writeFile(join(bin, 'npm'), `#!/bin/sh\necho '${global}'\n`);
+  await chmod(join(bin, 'npm'), 0o755);
 
   const setup = () => execFileSync(process.execPath, [cli, 'setup'], {
-    cwd: root, encoding: 'utf8', env: { ...process.env, PATH: `${bin}:${process.env.PATH}` },
+    cwd: root, encoding: 'utf8', env: { ...process.env, HOME: root, PI_MANAGED_INSTALL_ROOT: '', PATH: `${bin}:${process.env.PATH}` },
   });
 
   const output = setup();
@@ -27,6 +32,7 @@ test('setup ignores only local assets and claims, without overwriting existing i
   assert.match(output, /local files in \.factory\/items\/ \(default\), or GitHub Issues/);
   assert.match(output, /"tracker": \{ "command": \["github"\] \}/);
   assert.match(output, /before your first run/);
+  assert.match(output, /✓ pi is installed \(the agents run on it\)/);
   const ignore = join(root, '.factory/.gitignore');
   const original = await readFile(ignore, 'utf8');
   assert.match(original, /^assets\/$/m);

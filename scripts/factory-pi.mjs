@@ -127,13 +127,30 @@ export async function runCheck(worktree, signal) {
   return result.ok ? 'Project checks passed' : `${result.gate}: failed\n${result.output}`
 }
 
-export async function loadFactoryResources(worktree, role = 'review') {
+export function piDist() {
   const install = process.env.PI_MANAGED_INSTALL_ROOT || join(homedir(), '.pi/agent/install')
+
+  if (!process.env.PI_MANAGED_INSTALL_ROOT) {
+    try {
+      const global = execFileSync('npm', ['root', '-g'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim()
+      const dist = join(global, '@earendil-works/pi-coding-agent/dist')
+
+      if (existsSync(join(dist, 'index.js'))) return dist
+    } catch { /* Pi may use a managed installation without npm. */ }
+  }
+
+  if (!existsSync(join(install, 'current-version')))
+    throw new Error('Pi SDK not found. Install @earendil-works/pi-coding-agent globally with npm, or set PI_MANAGED_INSTALL_ROOT')
+
   const version = readFileSync(join(install, 'current-version'), 'utf8').trim()
 
   if (!/^[\w.+-]+$/.test(version)) throw new Error('Invalid Pi installation')
 
-  const dist = join(install, 'releases', version, 'node_modules/@earendil-works/pi-coding-agent/dist')
+  return join(install, 'releases', version, 'node_modules/@earendil-works/pi-coding-agent/dist')
+}
+
+export async function loadFactoryResources(worktree, role = 'review') {
+  const dist = piDist()
 
   const sdk = await import(pathToFileURL(join(dist, 'index.js')).href)
 

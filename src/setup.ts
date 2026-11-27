@@ -98,6 +98,11 @@ function checks(root: string): Array<[string, () => boolean]> {
     try { quiet(cmd, args, cwd); return true; } catch { return false; }
   };
 
+  const globalPi = () => {
+    try { return existsSync(join(quiet("npm", ["root", "-g"], root), "@earendil-works/pi-coding-agent/dist/index.js")); }
+    catch { return false; }
+  };
+
   return [
     ["git origin remote (the factory pushes task branches to it)", () => has("git", ["remote", "get-url", "origin"])],
     ["sbx is installed (every project command runs in a sandbox)", () => has("sbx", ["--version"])],
@@ -107,7 +112,8 @@ function checks(root: string): Array<[string, () => boolean]> {
         return rules.some((r: { id: string; decision: string }) => r.id === "default-deny-all" && r.decision === "deny");
       } catch { return false; }
     }],
-    ["pi is installed with a managed install (the agents run on it)", () =>
+    ["pi is installed (the agents run on it)", () =>
+      (!process.env.PI_MANAGED_INSTALL_ROOT && globalPi()) ||
       existsSync(join(process.env.PI_MANAGED_INSTALL_ROOT || join(process.env.HOME ?? "", ".pi/agent/install"), "current-version"))],
   ];
 }
