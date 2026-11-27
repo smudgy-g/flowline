@@ -916,7 +916,10 @@
               ? `<button class="btn primary" onclick="cleanUp(false)">Clean up</button>`
               : "") +
               (c.prUrl
-                ? `<a class="btn${c.merged ? "" : " primary"}" style="text-decoration:none;padding:8px 16px;border-radius:6px" href="${esc(c.prUrl)}" target="_blank">Open the change</a>`
+                ? `<a class="btn${c.merged || c.githubCompareUrl ? "" : " primary"}" style="text-decoration:none;padding:8px 16px;border-radius:6px" href="${esc(c.prUrl)}" target="_blank">${c.githubCompareUrl ? 'Open delivery note' : 'Open the change'}</a>`
+                : "") +
+              (c.githubCompareUrl && !c.merged
+                ? `<a class="btn primary" style="text-decoration:none;padding:8px 16px;border-radius:6px" href="${esc(c.githubCompareUrl)}" target="_blank" rel="noopener noreferrer">Create GitHub PR…</a>`
                 : "") +
               (c.merged ? "" : abandonButton),
           ];

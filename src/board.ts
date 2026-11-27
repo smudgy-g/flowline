@@ -4,6 +4,7 @@
 // Every action carries the token of the wait it was shown, so a click only applies to what was on screen.
 // Like `frankenstein approve`, this guards against mistakes, not against an agent with a shell in the VM (README.md).
 import { readFile } from "node:fs/promises";
+import { execFileSync } from "node:child_process";
 import { registerApiRoute } from "@mastra/core/server";
 import type { LaneState } from "./fast-lane.ts";
 import {
@@ -45,6 +46,18 @@ import {
   type ResumeData,
   type RunView,
 } from "./runs.ts";
+
+/** Local delivery is a note; for GitHub remotes also offer a browser link to create the PR by hand. */
+export function githubCompareUrl(remote: string, base: string, branch: string): string | undefined {
+  const match = /^(?:git@(?:github\.com(?:-[\w-]+)?|ssh\.github\.com):|https:\/\/github\.com\/)([\w.-]+\/[\w.-]+?)(?:\.git)?$/.exec(remote);
+  if (!match) return undefined;
+  return `https://github.com/${match[1]}/compare/${encodeURIComponent(base)}...${encodeURIComponent(branch)}?expand=1`;
+}
+
+const githubRemote = (() => {
+  try { return execFileSync('git', ['remote', 'get-url', 'origin'], { cwd: config.checkout, encoding: 'utf8' }).trim(); }
+  catch { return ''; }
+})();
 
 export const COLUMNS = [
   "Items",
@@ -106,6 +119,7 @@ export type Card = {
   waiting?: RunView["waiting"];
   error?: string;
   prUrl?: string;
+  githubCompareUrl?: string;
   merged?: boolean;
   /** At an approval: the factory's UAT journeys changed since this run's were pinned. */
   newerUat?: { head: string; files: string[] };
@@ -246,8 +260,10 @@ export async function card(
       ...base,
       column: "Draft PR",
       kind: "done",
-      status: "Draft PR open",
+      status: v.prUrl?.startsWith('file://') ? 'Change delivered' : 'Draft PR open',
       prUrl: v.prUrl,
+      githubCompareUrl: v.prUrl?.startsWith('file://') && lane?.workItem
+        ? githubCompareUrl(githubRemote, lane.base, lane.workItem) : undefined,
     };
   if (v.status === "running")
     return {
