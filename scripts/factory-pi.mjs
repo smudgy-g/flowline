@@ -190,7 +190,7 @@ export function fallbackReason(message = '') {
 
   if (/\b429\b|rate.?limit|too many requests/i.test(message)) return 'rate-limit'
 
-  if (/\b(?:502|503|504)\b|service unavailable|temporarily unavailable|overloaded|connection (?:reset|refused)|fetch failed/i.test(message)) return 'unavailable'
+  if (/\b(?:500|502|503|504)\b|service unavailable|temporarily unavailable|overloaded|connection (?:reset|refused)|ECONNRESET|fetch failed/i.test(message)) return 'unavailable'
 
   return undefined
 }

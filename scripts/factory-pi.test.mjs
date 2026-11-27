@@ -113,6 +113,8 @@ test('provider limits and outages are classified without treating bad credential
   assert.equal(fallbackReason('insufficient_quota'), 'usage-limit')
   assert.equal(fallbackReason('429 Too Many Requests: rate limit'), 'rate-limit')
   assert.equal(fallbackReason('503 service unavailable'), 'unavailable')
+  assert.equal(fallbackReason('500 Internal Server Error'), 'unavailable')
+  assert.equal(fallbackReason('read ECONNRESET'), 'unavailable')
   assert.equal(fallbackReason('401 invalid api key'), undefined)
   assert.equal(fallbackReason('model not found'), undefined)
   assert.deepEqual(modelPolicy('provider/model', 'default'), {

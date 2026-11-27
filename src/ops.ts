@@ -74,6 +74,7 @@ async function run(
   bin: string,
   args: string[],
   env: Record<string, string> = {},
+  raw = false,
 ): Promise<string> {
   try {
     const { stdout } = await exec(bin, args, {
@@ -85,7 +86,7 @@ async function run(
       maxBuffer: 64 * 1024 * 1024,
     });
 
-    return stdout.trim();
+    return raw ? stdout : stdout.trim();
   } catch (error) {
     const e = error as { stderr?: string; stdout?: string; message: string };
     throw new Error(
@@ -257,14 +258,14 @@ async function changedFiles(
     "--name-only",
     "-z",
     since,
-  ]);
+  ], {}, true);
 
   const untracked = await run(worktree, "git", [
     "ls-files",
     "--others",
     "--exclude-standard",
     "-z",
-  ]);
+  ], {}, true);
 
   const files = [
     ...new Set(`${tracked}\0${untracked}`.split("\0").filter(Boolean)),
@@ -385,7 +386,7 @@ export async function branchDiff(worktree: string): Promise<string> {
       "--others",
       "--exclude-standard",
       "-z",
-    ])
+    ], {}, true)
   )
     .split("\0")
     .filter(Boolean);
@@ -439,12 +440,12 @@ export async function removeTask(
       await cp(historyFile(worktree), `${archiveDir(workItem)}/history.md`);
     }
 
-    const uncommitted = await changedFiles(worktree, "HEAD");
+    if (!discard) {
+      const uncommitted = await changedFiles(worktree, "HEAD");
 
-    if (uncommitted.length && !discard)
-      throw new Error(
-        `Uncommitted changes in ${workItem}: ${uncommitted.join(", ")}`,
-      );
+      if (uncommitted.length)
+        throw new Error(`Uncommitted changes in ${workItem}: ${uncommitted.join(", ")}`);
+    }
   }
 
   await sandbox.remove(workItem,true);
@@ -625,7 +626,6 @@ export const realOps: Ops = {
         FACTORY_READABLE: JSON.stringify([...config.readable, historyDir(worktree)]),
         FACTORY_TEST_PATHS: JSON.stringify(config.paths.tests),
         FACTORY_CODER_SKILLS: JSON.stringify(config.skills.coder),
-        FACTORY_STATE_ROOT: stateRoot,
         FACTORY_PROJECT: projectRoot,
         ...(selected ? { FACTORY_MODEL_POLICY: JSON.stringify(selected) } : {}),
       },
@@ -718,16 +718,18 @@ export const realOps: Ops = {
     const root = `${stateRoot}/cache`;
     await mkdir(root,{recursive:true});
     const dir = await mkdtemp(`${root}/run-`), inputs = `${dir}/inputs`, scratch = `${dir}/scratch`, source = `${dir}/source`;
-    for (const sub of [inputs,scratch,source]) await mkdir(sub);
-    // The adapter and its fixtures come from the base branch, never from the task branch under test.
-    await run(projectRoot,'git',['archive','-o',`${dir}/inputs.tar`,baseline,'--',...config.acceptance.inputs]);
-    await run(projectRoot,'tar',['-xf',`${dir}/inputs.tar`,'-C',inputs]);
-    await run(client,'git',['archive','-o',`${source}/project.tar`,commit]);
-    // Never reuse an offline sandbox, even after an infrastructure failure.
-    await sandbox.remove(branch,true);
-    await sandbox.create(branch,scratch,true,[inputs,source,...(config.acceptance.assets ? [config.acceptance.assets] : [])]);
+    let completed = false;
 
     try {
+      for (const sub of [inputs,scratch,source]) await mkdir(sub);
+      // The adapter and its fixtures come from the base branch, never from the task branch under test.
+      await run(projectRoot,'git',['archive','-o',`${dir}/inputs.tar`,baseline,'--',...config.acceptance.inputs]);
+      await run(projectRoot,'tar',['-xf',`${dir}/inputs.tar`,'-C',inputs]);
+      await run(client,'git',['archive','-o',`${source}/project.tar`,commit]);
+      // Never reuse an offline sandbox, even after an infrastructure failure.
+      await sandbox.remove(branch,true);
+      await sandbox.create(branch,scratch,true,[inputs,source,...(config.acceptance.assets ? [config.acceptance.assets] : [])]);
+
       const result = await sandbox.exec(branch,config.acceptance.command,{offline:true,workdir:inputs,timeoutMinutes:60,
         env:{...config.acceptance.env,FACTORY_ACCEPTANCE:'1',INPUTS:inputs,PROJECT_ARCHIVE:`${source}/project.tar`,
           ...(config.acceptance.assets ? {ASSETS:config.acceptance.assets} : {}),REPO:config.repo,REF:branch,COMMIT:commit}});
@@ -737,11 +739,16 @@ export const realOps: Ops = {
       const verdict = z.strictObject({ commit: z.literal(commit), pass: z.boolean(), detail: z.string().min(1) }).parse(JSON.parse(result.stdout ?? result.output));
       const report = { ref: branch, ...verdict };
       await writeFile(join(dir,'report.json'),JSON.stringify(report));
+      completed = true;
       return { run: dir, report };
     } finally {
-      await sandbox.remove(branch,true);
-      await rm(scratch,{recursive:true,force:true});
-      await rm(source,{recursive:true,force:true});
+      try { await sandbox.remove(branch,true); }
+      finally {
+        if (completed) {
+          await rm(scratch,{recursive:true,force:true});
+          await rm(source,{recursive:true,force:true});
+        } else await rm(dir,{recursive:true,force:true});
+      }
     }
   },
 

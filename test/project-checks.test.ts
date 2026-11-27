@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -39,10 +39,17 @@ esac\n`, { mode: 0o755 });
   process.env.FACTORY_PROJECT = base;
   process.env.FACTORY_STATE = join(root, "state");
   process.env.PATH = `${root}:${previous.path}`;
-  const { realOps } = await import("../src/ops.ts");
+  const { realOps, removeTask } = await import("../src/ops.ts");
   const result = await realOps.runGates(worktree);
   assert.deepEqual(result, { ok: false, gate: "suite", output: "" });
   const dispatched = await readFile(join(root, "dispatched"), "utf8");
   assert.equal(dispatched, "ran fix main.go\nstopped\nran vet\nran suite\nstopped\n", "autofix, then check, then the failing gate; never past it, and the sandbox stops after each batch");
   assert.ok(!dispatched.includes("never"));
+
+  await writeFile(join(worktree, " leading.go"), "package main\n");
+  assert.ok((await realOps.inspect(worktree)).files.includes(" leading.go"), "NUL-separated git paths retain leading whitespace");
+  await assert.rejects(removeTask(worktree, "42-item", false), /Uncommitted changes/);
+  await symlink("main.go", join(worktree, "link"));
+  await assert.rejects(realOps.inspect(worktree), /Unsafe task path/);
+  await removeTask(worktree, "42-item", true);
 });

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, readFile, readdir, rm } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -40,7 +40,7 @@ cd "${dir}"; shift
 case "$1" in
 list) if test -e created; then echo '[{"name":"fx-uat-41-test","status":"running"}]'; else echo '[]'; fi;;
 policy) echo '{"rules":[{"id":"default-deny-all","decision":"deny","scope":"global","resource_type":"network"}]}' ;;
-create) [[ " $* " == *' --deny-network ** '* ]]; touch created;;
+create) [[ " $* " == *' --deny-network ** '* ]]; if test -e create-fails; then exit 7; fi; touch created;;
 rm) rm created;;
 exec) for arg; do case "$arg" in INPUTS=*|PROJECT_ARCHIVE=*|COMMIT=*|REF=*) export "$arg";; esac; done
 [[ $(<"$INPUTS/probe") == pinned && $(tar -xOf "$PROJECT_ARCHIVE" hello) == approved ]]
@@ -59,7 +59,15 @@ esac\n`, { mode: 0o755 });
   assert.equal(JSON.parse(await readFile(join(result.run, 'report.json'), 'utf8')).pass, false);
   await assert.rejects(readFile(join(dir, 'created')), { code: 'ENOENT' });
 
+  const cache = join(dir, 'state/cache');
+  const before = await readdir(cache);
   await writeFile(join(dir, 'wrong'), '');
   await assert.rejects(realOps.runUat('41-test', pinned), /commit/);
   await assert.rejects(readFile(join(dir, 'created')), { code: 'ENOENT' });
+  assert.deepEqual(await readdir(cache), before, 'failed verdicts leave no temporary archives');
+
+  await rm(join(dir, 'wrong'));
+  await writeFile(join(dir, 'create-fails'), '');
+  await assert.rejects(realOps.runUat('41-test', pinned), /sbx create/);
+  assert.deepEqual(await readdir(cache), before, 'sandbox creation failures leave no temporary archives');
 });
