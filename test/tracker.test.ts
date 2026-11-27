@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -66,6 +66,33 @@ test('the local adapter keeps items in the repo, claims exclusively and accepts 
   assert.equal(existsSync(join(root, '.factory/claims/health')), false, 'closing releases the claim');
   await assert.rejects(local.read('health'), /closed/);
   await assert.rejects(local.read('nope'), /No work item nope/);
+});
+
+test('local delivery recognises a GitHub squash merge without changing local main, but not another head or base', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'tracker-squash-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const git = (...args: string[]) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', ...args], { cwd: root, encoding: 'utf8' }).trim();
+  git('init', '-qb', 'main');
+  git('commit', '-qm', 'base', '--allow-empty');
+  git('remote', 'add', 'origin', 'git@github.com-personal:smudgy-g/cv-exe.git');
+  git('checkout', '-qb', 'footer');
+  git('commit', '-qm', 'task', '--allow-empty');
+  const head = git('rev-parse', 'HEAD');
+  const bin = join(root, 'bin');
+  await mkdir(bin);
+  const fake = join(bin, 'gh');
+  await writeFile(fake, '#!/usr/bin/env node\nprocess.stdout.write(JSON.stringify([{state:"MERGED",headRefOid:process.env.FAKE_HEAD,baseRefName:process.env.FAKE_BASE}]))\n');
+  await chmod(fake, 0o755);
+  const adapter = join(import.meta.dirname, '../trackers/local.mjs');
+  const local = (fakeHead: string, fakeBase: string) => trackerClient(async (argv, stdin) =>
+    execFileSync('node', [adapter, ...argv], { input: stdin, encoding: 'utf8',
+      env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, FACTORY_CHECKOUT: root, FACTORY_BASE: 'main',
+        FAKE_HEAD: fakeHead, FAKE_BASE: fakeBase } }));
+  const { url } = await local(head, 'main').deliver('footer', 'main', 'Footer', 'Tested');
+  assert.deepEqual(await local(head, 'main').delivered(url), { state: 'accepted' });
+  assert.deepEqual(await local('0'.repeat(40), 'main').delivered(url), { state: 'open' });
+  assert.deepEqual(await local(head, 'staging').delivered(url), { state: 'open' });
+  assert.equal(git('rev-parse', 'main') === head, false, 'local main was not advanced');
 });
 
 test('state belongs to one repo and one tracker', async t => {

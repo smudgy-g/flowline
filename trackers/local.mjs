@@ -146,6 +146,21 @@ switch (verb) {
     if (!existsSync(join(dir('delivered'), `${branch}.md`))) throw new Error(`No delivery record for ${branch}`)
     let merged = false
     try { merged = git('branch', '--contains', branch, '--list', base).length > 0 } catch {}
+    // A GitHub squash/rebase merge does not contain the branch tip. Match its exact head and target instead;
+    // no fetch or local branch update is needed. Without gh/auth, local containment still works offline.
+    if (!merged) {
+      try {
+        const remote = git('remote', 'get-url', 'origin')
+        const repo = /^(?:git@(?:github\.com(?:-[\w-]+)?|ssh\.github\.com):|https:\/\/github\.com\/)([\w.-]+\/[\w.-]+?)(?:\.git)?$/.exec(remote)?.[1]
+        if (repo) {
+          const head = git('rev-parse', `refs/heads/${branch}`)
+          const prs = JSON.parse(execFileSync('gh', ['pr', 'list', '--repo', repo, '--head', branch,
+            '--state', 'merged', '--json', 'state,headRefOid,baseRefName', '--limit', '100'],
+          { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 10000 }))
+          merged = prs.some(pr => pr.state === 'MERGED' && pr.baseRefName === base && pr.headRefOid === head)
+        }
+      } catch { /* GitHub is optional for the local tracker; a failed lookup cannot prove a merge. */ }
+    }
     say({ state: merged ? 'accepted' : 'open' })
     break
   }
