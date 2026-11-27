@@ -41,6 +41,20 @@ test('background boards are per-project; stopping one never stops another or an 
   const firstPort = Number(first.match(/localhost:(\d+)\/board/)?.[1]);
   const secondPort = Number(second.match(/localhost:(\d+)\/board/)?.[1]);
   assert.ok(firstPort && secondPort && firstPort !== secondPort, `${first}\n${second}`);
+  const board = `http://127.0.0.1:${firstPort}/board`;
+  const html = await (await fetch(board)).text();
+  assert.match(html, /href="\/board\/style\.css"/);
+  assert.match(html, /src="\/board\/app\.js"/);
+  const css = await fetch(`${board}/style.css`);
+  assert.match(css.headers.get('content-type') ?? '', /^text\/css/);
+  assert.match(await css.text(), /--bg:/);
+  const js = await fetch(`${board}/app.js`);
+  assert.match(js.headers.get('content-type') ?? '', /^application\/javascript/);
+  const script = await js.text();
+  assert.ok(script.includes(`data.repo === "${a.split('/').at(-1)}"`));
+  assert.ok(!script.includes('{{repo}}') && !script.includes('{{base}}'));
+  assert.match(await (await fetch(`http://127.0.0.1:${secondPort}/board/app.js`)).text(),
+    new RegExp(`data.repo === "${b.split('/').at(-1)}"`));
   assert.match(await run(a, 'start'), /Already running/);
   await run(a, 'stop');
   assert.equal((await fetch(`http://127.0.0.1:${secondPort}/board/_identity`)).status, 200);

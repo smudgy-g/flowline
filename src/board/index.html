@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧟‍♂️</text></svg>"
+    />
+    <title>{{repo}} · Factory board</title>
+    <!-- The board (board.ts serves it and its data). Studio, for looking inside a run, is at /. -->
+    <link rel="stylesheet" href="/board/style.css" />
+  </head>
+  <body>
+    <header>
+      <h1>Factory board</h1>
+      <span>{{repo}} → <code>{{base}}</code></span>
+      <span id="factories" class="muted"></span>
+      <span id="counts"></span>
+      <span class="right"><span id="updated"></span></span>
+    </header>
+    <div id="notice"></div>
+    <div class="main">
+      <nav class="side">
+        <button class="btn primary" onclick="newItem(false)">New item</button>
+        <span
+          >Describe one outcome with its acceptance criteria; it appears under
+          Items straight away.</span
+        >
+        <button class="btn" onclick="newItem(true)">New stack</button>
+        <span
+          >A bigger feature as several changes: describe it once and list them
+          in order.</span
+        >
+        <button class="btn" id="pause-all" onclick="pauseAll()">
+          Pause all
+        </button>
+        <span id="pause-info">Runs finish the step they're on, then wait.</span>
+        <a href="/workflows/fastLane" style="margin-top: auto">Studio</a>
+      </nav>
+      <div class="board" id="board"></div>
+    </div>
+    <div id="overlay">
+      <div class="scrim" onclick="closeCard()"></div>
+      <aside class="drawer">
+        <div id="drawer-body"></div>
+        <div class="actions" id="actions"></div>
+      </aside>
+    </div>
+
+    <script src="/board/app.js"></script>
+  </body>
+</html>

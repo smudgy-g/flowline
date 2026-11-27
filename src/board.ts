@@ -1,5 +1,5 @@
 // The board: every run as a card in the column of the stage it is at, with what it needs from you.
-// Served by `frankenstein board` at http://localhost:4111/board (the page is board.html).
+// Served by `frankenstein board` at http://localhost:4111/board (assets are in board/).
 //
 // Every action carries the token of the wait it was shown, so a click only applies to what was on screen.
 // Like `frankenstein approve`, this guards against mistakes, not against an agent with a shell in the VM (README.md).
@@ -429,9 +429,31 @@ export function boardRoutes(factory: () => Factory) {
       requiresAuth: false,
       handler: async (c) =>
         c.html(
-          (await readFile(new URL("./board.html", import.meta.url), "utf8"))
+          (await readFile(new URL("./board/index.html", import.meta.url), "utf8"))
             .replaceAll("{{repo}}", config.repo)
             .replaceAll("{{base}}", config.base),
+        ),
+    }),
+
+    registerApiRoute("/board/style.css", {
+      method: "GET",
+      requiresAuth: false,
+      handler: async (c) =>
+        c.text(await readFile(new URL("./board/style.css", import.meta.url), "utf8"), 200, {
+          "Content-Type": "text/css; charset=utf-8",
+        }),
+    }),
+
+    registerApiRoute("/board/app.js", {
+      method: "GET",
+      requiresAuth: false,
+      handler: async (c) =>
+        c.text(
+          (await readFile(new URL("./board/app.js", import.meta.url), "utf8"))
+            .replaceAll("{{repo}}", config.repo)
+            .replaceAll("{{base}}", config.base),
+          200,
+          { "Content-Type": "application/javascript; charset=utf-8" },
         ),
     }),
 

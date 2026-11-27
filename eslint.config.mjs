@@ -35,7 +35,7 @@ export default [
     rules: { "padding-line-between-statements": padding },
   },
   {
-    files: ["scripts/**/*.mjs", "trackers/**/*.mjs"],
+    files: ["scripts/**/*.mjs", "trackers/**/*.mjs", "src/board/**/*.js"],
     rules: { "padding-line-between-statements": padding },
   },
 ];

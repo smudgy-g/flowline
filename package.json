@@ -21,11 +21,11 @@
     "WORKFLOW.md"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json && cp src/board.html dist/board.html",
+    "build": "tsc -p tsconfig.json && rm -f dist/board.html && mkdir -p dist/board && cp src/board/* dist/board/",
     "prepack": "npm run build",
     "test": "node --test 'test/*.test.ts' && node --test scripts/*.test.mjs",
-    "format": "eslint src test scripts trackers --fix && prettier --write README.md docs src/board.html package.json .prettierrc.json eslint.config.mjs",
-    "lint": "eslint src test scripts trackers && prettier --check README.md docs src/board.html package.json .prettierrc.json eslint.config.mjs",
+    "format": "eslint src test scripts trackers --fix && prettier --write README.md docs src/board package.json .prettierrc.json eslint.config.mjs",
+    "lint": "eslint src test scripts trackers && prettier --check README.md docs src/board package.json .prettierrc.json eslint.config.mjs",
     "check": "pnpm run lint && tsc -p tsconfig.check.json && node --test 'test/*.test.ts' && node --test scripts/*.test.mjs"
   },
   "dependencies": {
