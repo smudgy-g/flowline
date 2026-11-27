@@ -11,6 +11,7 @@ const cli = resolve(import.meta.dirname, '../src/cli.ts');
 
 test('background boards are per-project; stopping one never stops another or an unowned PID', async t => {
   const roots: string[] = [];
+
   const create = async () => {
     const root = await mkdtemp(join(tmpdir(), 'factory-board-'));
     roots.push(root);
@@ -22,10 +23,13 @@ test('background boards are per-project; stopping one never stops another or an 
     }));
     return root;
   };
+
   const a = await create();
   const b = await create();
+
   const run = async (cwd: string, action: string) =>
     (await exec(process.execPath, [cli, 'board', action], { cwd, env: { ...process.env, FACTORY_PROJECT: cwd, FACTORY_STATE: join(cwd, 'state') }, timeout: 45000 })).stdout;
+
   t.after(async () => {
     for (const root of roots) {
       await run(root, 'stop').catch(() => {});

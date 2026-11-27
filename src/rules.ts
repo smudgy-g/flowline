@@ -64,6 +64,7 @@ export function planSteps(summary: string): string[] {
   const parts = summary
     .split(/\n(?=\d+\.\s)/)
     .filter((part) => /^\d+\.\s/.test(part));
+
   return parts.length > 1 ? parts.map((part) => part.trim()) : [];
 }
 
@@ -122,6 +123,7 @@ export function parsePlan(
     const { summary, tests, questions } = JSON.parse(block ?? "");
 
     if (typeof summary !== "string" || !summary.trim()) return null;
+
     if (typeof tests !== "string" || !tests.trim()) return null;
 
     return {
@@ -148,6 +150,7 @@ export function parseUnfinished(reply: string, total: number): number[] {
 /** The steps from the planner's last ```json block, or null when it has none or it is malformed. */
 export function parseSteps(text: string): string[] | null {
   const block = [...text.matchAll(/```json\s*([\s\S]*?)```/g)].at(-1)?.[1];
+
   try {
     const { steps } = JSON.parse(block ?? "");
     return Array.isArray(steps) &&
@@ -232,10 +235,14 @@ export function findingsFormatPrompt(reply: string): string {
 /** The last ```json block in a reviewer's reply, or null when it has none or it is malformed. */
 export function parseFindings(text: string): Finding[] | null {
   const block = [...text.matchAll(/```json\s*([\s\S]*?)```/g)].at(-1)?.[1];
+
   if (!block) return null;
+
   try {
     const { findings } = JSON.parse(block);
+
     if (!Array.isArray(findings)) return null;
+
     const severities = ["critical", "high", "medium", "low"];
     return findings.every(
       (f) =>
@@ -278,10 +285,13 @@ export type StackMember = { title: string; byHand: boolean; number?: string };
 /** A section of an issue-form body: the text under `### <name>` up to the next heading. */
 export function formSection(body: string, name: string): string {
   const lines = body.split("\n");
+
   const start = lines.findIndex(
     (l) => l.trim().toLowerCase() === `### ${name.toLowerCase()}`,
   );
+
   if (start < 0) return "";
+
   const end = lines.findIndex((l, i) => i > start && /^#{1,3} /.test(l));
   return lines
     .slice(start + 1, end < 0 ? undefined : end)
@@ -302,6 +312,7 @@ export function parseStack(body: string): {
       title: t.replace(/\s*\(by hand\)\s*/i, " ").trim(),
       byHand: /\(by hand\)/i.test(t),
     }));
+
   return {
     members,
     lane: formSection(body, "Lane").split("\n")[0].trim().toLowerCase(),
@@ -321,12 +332,14 @@ export function memberIssue(args: {
   const { parent, member, index, total } = args;
   // No "(#parent)": the title becomes the PR's, and the sub-issue link already ties it to the stack.
   const title = `${index + 1}/${total} ${member.title}`.slice(0, 250);
+
   const body = [
     `### Outcome\n\n${member.title}\n\nPR ${index + 1} of ${total} in the stack #${parent.number} (${parent.title}). It builds on what earlier PRs merged into \`${args.branch}\`, and must follow the technical design below.`,
     `### Why\n\nPart of #${parent.number}; see its Why.`,
     `### Technical design (approved for the whole stack)\n\n${args.design}`,
     `### Lane\n\n${member.byHand ? "by hand" : laneName(args.lane ?? "fast")}`,
   ].join("\n\n");
+
   return { title, body };
 }
 
@@ -352,6 +365,7 @@ export const MAX_PLAN_REVISIONS = 2;
 
 const FINDINGS_FORMAT =
   'End your reply with exactly one ```json block: {"findings":[{"severity":"critical|high|medium|low","file":"path","line":1,"description":"..."}]} (an empty array when there are none).';
+
 const PLAN_SEVERITIES =
   "Critical only when the outcome can't be met as planned; high for a gap the outcome needs closed; medium for a likely gap worth closing now; low for follow-ups and anything beyond the issue's Outcome or inside its Out of scope. Never add scope. Each finding: the gap, the evidence (file:line, or the plan or issue quoted), and the exact change to the plan. A plan with no file yet: the file the step names, or file \"issue\", line 0.";
 
@@ -401,14 +415,19 @@ export function designReviewPrompt(
 /** The numbered lines under a reviewer's last `Proposed PRs:` heading; [] when it has none. */
 export function parseProposedPrs(text: string): string[] {
   const at = text.lastIndexOf("Proposed PRs:");
+
   if (at < 0) return [];
+
   const lines: string[] = [];
+
   for (const line of text.slice(at + "Proposed PRs:".length).split("\n")) {
     const item = /^\s*\d+[.)]\s+(.+)$/.exec(line)?.[1]?.trim();
+
     if (item) lines.push(item);
     else if (line.trim().startsWith("```") || (lines.length && line.trim()))
       break;
   }
+
   return lines;
 }
 
@@ -425,10 +444,13 @@ export const tagged = (skill: string, findings: Finding[]): Finding[] =>
 /** The issue body with one form section's text replaced (added at the end when missing). */
 export function replaceSection(body: string, name: string, text: string): string {
   const lines = body.split("\n");
+
   const start = lines.findIndex(
     (l) => l.trim().toLowerCase() === `### ${name.toLowerCase()}`,
   );
+
   if (start < 0) return `${body.trimEnd()}\n\n### ${name}\n\n${text}\n`;
+
   const end = lines.findIndex((l, i) => i > start && /^#{1,3} /.test(l));
   return [
     ...lines.slice(0, start + 1),

@@ -24,7 +24,9 @@
     "build": "tsc -p tsconfig.json && cp src/board.html dist/board.html",
     "prepack": "npm run build",
     "test": "node --test 'test/*.test.ts' && node --test scripts/*.test.mjs",
-    "check": "tsc -p tsconfig.check.json && node --test 'test/*.test.ts' && node --test scripts/*.test.mjs"
+    "format": "eslint src test scripts trackers --fix && prettier --write README.md docs package.json .prettierrc.json eslint.config.mjs",
+    "lint": "eslint src test scripts trackers && prettier --check README.md docs package.json .prettierrc.json eslint.config.mjs",
+    "check": "pnpm run lint && tsc -p tsconfig.check.json && node --test 'test/*.test.ts' && node --test scripts/*.test.mjs"
   },
   "dependencies": {
     "@hono/node-server": "2.1.11",
@@ -35,6 +37,9 @@
   },
   "devDependencies": {
     "@types/node": "^22.20.5",
+    "@typescript-eslint/parser": "^8.74.0",
+    "eslint": "^10.15.0",
+    "prettier": "^3.10.1",
     "typescript": "^5.9.3"
   },
   "packageManager": "pnpm@11.22.0"

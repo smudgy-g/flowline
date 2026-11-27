@@ -17,6 +17,7 @@ const pick = (c: { column: string; kind: string; status: string } | null) =>
 
 function fakeWorld() {
   const calls: string[] = [];
+
   const world = {
     files: ["server/a.ts"],
     digest: "d1",
@@ -47,8 +48,10 @@ function fakeWorld() {
     afterCoder: () => {},
     baselines: [] as string[],
   };
+
   const clean =
     '```json\n{"findings":[{"severity":"low","file":"a.ts","line":3,"description":"nit"}]}\n```';
+
   const ops: Ops = {
     paused: async (runId) => world.pauses.has("all") || world.pauses.has(runId),
     readIssue: async (number) => ({
@@ -65,6 +68,7 @@ function fakeWorld() {
     branchExists: async () => false,
     uatBaseline: async (at, after) => {
       if (at && after && /^0+$/.test(at)) throw new Error("only forward");
+
       return at ?? "f".repeat(40);
     },
     provision: async (branch, base) => {
@@ -74,9 +78,12 @@ function fakeWorld() {
     checkWorktree: async () => {},
     runPi: async (_wt, role, prompt) => {
       world.prompts.push(`${role}: ${prompt}`);
+
       if (role === "coder" && world.coderEdits-- > 0)
         world.digest = `d${world.prompts.length}`;
+
       if (role === "coder") world.afterCoder();
+
       calls.push(
         `pi ${role}${prompt.match(/## This call: (step \d+ of \d+)/)?.[1].replace(/^/, " ") ?? ""}${role === "coder" && prompt.includes("Fix this") ? " (with feedback)" : ""}`,
       );
@@ -102,13 +109,16 @@ function fakeWorld() {
       world.baselines.push(baseline);
       const kind = world.uatResults.shift()!;
       calls.push(`uat ${kind}`);
+
       if (kind === "infrastructure") throw new Error("Acceptance worker unavailable");
+
       const report: UatReport = {
         ref: branch,
         commit: world.pushed,
         pass: kind === "passed",
         detail: kind === "client" ? "customer inquiry timed out" : "Passed",
       };
+
       return { run: "run-x", report };
     },
     openDraftPr: async () => {
@@ -132,6 +142,7 @@ function fakeWorld() {
       world.splits.push(`${base} #${member}: ${parts.join(" | ")}`);
     },
   };
+
   return { ops, calls, world };
 }
 
@@ -417,10 +428,13 @@ test("a pause stops a run between coder calls and before its next step; resuming
 
   // Resumed, it starts coding; paused after step 1, it stops before step 2.
   world.pauses.clear();
+
   world.afterCoder = () => {
     world.pauses.add(id);
+
     world.afterCoder = () => {};
   };
+
   v = await resume(fx(), id, {});
   assert.equal(v.waiting?.kind, "paused");
   assert.deepEqual(calls.filter((c) => c.startsWith("pi coder")), ["pi coder step 1 of 3"]);
@@ -522,12 +536,14 @@ test("the planner drafts the plan from the issue; the card asks to approve it, w
 
 const json = (findings: object[]) =>
   "```json\n" + JSON.stringify({ findings }) + "\n```";
+
 const high = (description: string) => ({
   severity: "high",
   file: "issue",
   line: 0,
   description,
 });
+
 const planReply = (n: number) =>
   "```json\n" +
   JSON.stringify({
@@ -543,18 +559,24 @@ test("standard: every plan reviewed, at most two automatic revisions, then it wa
   world.gateFailures = 0;
   world.plannerReplies = [planReply(1), planReply(2), planReply(3)];
   let architectRounds = 0;
+
   world.reviewer = (prompt) => {
     if (prompt.includes("drafted plan"))
       return prompt.includes("/skill:plan-fitness")
         ? `${json([high("no step handles Slack timing out")])}\n\nProposed PRs:\n1. Fail fast: inquiry route\n2. Retry later: queue`
         : json([]);
+
     if (prompt.includes("/skill:interrogate")) return "no block here";
+
     if (prompt.startsWith("A code reviewer wrote") && prompt.includes("no block here"))
       return "still none";
+
     if (prompt.includes("/skill:architect"))
       return architectRounds++ ? json([]) : json([high("logic belongs in the service")]);
+
     return undefined;
   };
+
   const db = `file:${join(mkdtempSync(join(tmpdir(), "fx-")), "factory.db")}`;
   const fx = () => createFactory(ops, db);
   const id = runIdFor("1500");

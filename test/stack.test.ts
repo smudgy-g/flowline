@@ -20,6 +20,7 @@ function fakes() {
   let next = 1424
   const splits = new Map<string, string[]>()
   let reviewReply = (_prompt: string) => '```json\n{"findings":[]}\n```'
+
   const stackOps: StackOps = {
     paused: async () => false,
     readIssue: async number => ({ number, title: 'Import offers', body: parentBody, url: 'u', author: 'adam', comments: ['## Draft design'] }),
@@ -36,6 +37,7 @@ function fakes() {
     record: async (_branch, title) => { history.push(title) },
     saveDesign: async (_branch, design) => { designs.push(design) },
   }
+
   // Fast-lane members only need to reach their first wait (the plan).
   const ops = { readIssue: async (number: number) => ({ number, title: 'member', body: '', url: 'u', author: 'adam', comments: [] }), claim: async () => {}, branchExists: async () => false, uatBaseline: async () => 'f'.repeat(40), provision: async (branch: string) => `/wt/${branch}`, runPi: async () => 'no plan', record: async () => {} } as unknown as Ops
   return { calls, history, designs, open, stackOps, ops, splits, setReviewer: (f: (prompt: string) => string) => { reviewReply = f } }

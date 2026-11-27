@@ -33,6 +33,7 @@ export async function setup(baseArg?: string) {
 
   const base = baseArg ?? currentBranch(root) ?? "main";
   const config = join(dir, "config.json");
+
   if (existsSync(config)) {
     warn(`.factory/config.json exists; leaving it alone`);
   } else {
@@ -42,6 +43,7 @@ export async function setup(baseArg?: string) {
   }
 
   const ignore = join(dir, ".gitignore");
+
   if (existsSync(ignore)) warn(".factory/.gitignore exists; leaving it alone (ignore assets/ and claims/ if needed)");
   else {
     await writeFile(ignore, "# Downloaded acceptance toolchains and caches (rebuild locally).\nassets/\n# Local work-item locks (never share across clones).\nclaims/\n");
@@ -51,6 +53,7 @@ export async function setup(baseArg?: string) {
   await mkdir(join(dir, "items"), { recursive: true });
   await mkdir(join(dir, "acceptance"), { recursive: true });
   const adapter = join(dir, "acceptance/run.sh");
+
   if (existsSync(adapter)) warn(".factory/acceptance/run.sh exists; leaving it alone");
   else {
     await copyFile(join(installRoot, "templates/acceptance/run.sh"), adapter);
@@ -91,6 +94,7 @@ function checks(root: string): Array<[string, () => boolean]> {
   const has = (cmd: string, args: string[], cwd = root) => {
     try { quiet(cmd, args, cwd); return true; } catch { return false; }
   };
+
   return [
     ["git origin remote (the factory pushes task branches to it)", () => has("git", ["remote", "get-url", "origin"])],
     ["sbx is installed (every project command runs in a sandbox)", () => has("sbx", ["--version"])],

@@ -106,12 +106,14 @@ const StackResume = z.object({
   /** With approve: take the design reviewers' proposed PR list instead of the current one. */
   useProposed: z.boolean().optional(),
 });
+
 const schemas = { state: StackState, resume: StackResume };
 const Step = z.object({});
 
 export function createStack(ops: StackOps, members: Members) {
   const laneStep: typeof guardedStep = (id, i, o, run, schemas) =>
     guardedStep(id, i, o, run, schemas, ops.paused);
+
   const intake = laneStep(
     "stack-intake",
     z.object({ issue: ItemId }),
@@ -120,12 +122,15 @@ export function createStack(ops: StackOps, members: Members) {
       const issue = await ops.readIssue(inputData.issue);
       await ops.claim(issue.number);
       const { members: list, lane } = parseStack(issue.body);
+
       if (!list.length)
         throw new Error(
           'The issue has no "PRs in order" list; use the Factory stack form',
         );
+
       if (lane && lane !== "fast lane" && lane !== "standard")
         throw new Error(`Lane "${lane}": use fast lane or standard`);
+
       await setState({
         ...state,
         issue,
@@ -144,9 +149,11 @@ export function createStack(ops: StackOps, members: Members) {
     Step,
     async ({ state, setState, resumeData, suspendData, suspend }) => {
       if (state.design) return {};
+
       if (resumeData?.approve && suspendData?.kind === "design-approval") {
         const approved = suspendData.design as string;
         const proposed = (suspendData.proposed ?? []) as StackMember[];
+
         const members =
           resumeData.useProposed && proposed.length ? proposed : state.members;
 
@@ -162,6 +169,7 @@ export function createStack(ops: StackOps, members: Members) {
             membersText(members),
           );
         }
+
         await ops.saveDesign(state.branch, approved);
         await ops.record(state.branch, "You approved the design", approved);
         await setState({ ...state, design: approved, members });
@@ -179,9 +187,11 @@ export function createStack(ops: StackOps, members: Members) {
 
       const issue = state.issue as Issue;
       const submitted = resumeData?.design?.trim();
+
       if (submitted) {
         // Standard: the design and PR list are reviewed before you approve; a changed list is only proposed.
         let reviews: Reviews | undefined;
+
         if (state.lane === "standard") {
           reviews = await ops.withReviewCheckout((call) =>
             runReviewers(
@@ -197,6 +207,7 @@ export function createStack(ops: StackOps, members: Members) {
             describeReviews(reviews),
           );
         }
+
         return suspend({
           kind: "design-approval",
           message:
@@ -209,6 +220,7 @@ export function createStack(ops: StackOps, members: Members) {
           }),
         });
       }
+
       return suspend({
         kind: "design",
         draft: issue.comments.join("\n\n---\n\n"),
@@ -228,8 +240,10 @@ export function createStack(ops: StackOps, members: Members) {
     place: boolean,
   ): Promise<StackState> => {
     const list: StackMember[] = [...state.members];
+
     for (const [index, member] of list.entries()) {
       if (member.number) continue;
+
       const { title, body } = memberIssue({
         parent: state.issue as Issue,
         branch: state.branch,
@@ -239,6 +253,7 @@ export function createStack(ops: StackOps, members: Members) {
         member,
         lane: state.lane,
       });
+
       const number = await ops.createSubIssue(
         (state.issue as Issue).number,
         title,
@@ -253,6 +268,7 @@ export function createStack(ops: StackOps, members: Members) {
       state = { ...state, members: list };
       await setState(state);
     }
+
     return state;
   };
 
@@ -267,9 +283,13 @@ export function createStack(ops: StackOps, members: Members) {
   ): Promise<StackState> => {
     const member = state.members[index];
     const done = state.splitDone ?? [];
+
     if (member.byHand || done.includes(member.number!)) return state;
+
     const parts = await ops.splitOf(state.branch, member.number!);
+
     if (!parts.length) return state;
+
     const inserted = parts.map(memberOf);
     state = {
       ...state,
@@ -348,6 +368,7 @@ export function createStack(ops: StackOps, members: Members) {
           state = await insertSplit(state, setState, index);
           continue;
         }
+
         if (member.byHand) {
           if (
             resumeData?.approve &&
@@ -357,6 +378,7 @@ export function createStack(ops: StackOps, members: Members) {
             await ops.closeIssue(number, "Done by hand.");
             continue;
           }
+
           return suspend({
             kind: "by-hand",
             number,
@@ -364,6 +386,7 @@ export function createStack(ops: StackOps, members: Members) {
             message: `PR ${index + 1} of ${state.members.length} is done by hand: ${member.title} (#${number}). Click Done when it is.`,
           });
         }
+
         if (!(await members.has(number))) {
           await members.start(number, state.branch);
           await ops.record(
@@ -380,7 +403,9 @@ export function createStack(ops: StackOps, members: Members) {
           message: `PR ${index + 1} of ${state.members.length} runs as its own card (#${number}). When its PR is merged into ${state.branch}, clean that card up and the next one starts.`,
         });
       }
+
       const total = state.members.length;
+
       if (current < total) await finished(current);
 
       await setState({ ...state, current: total });
@@ -396,13 +421,16 @@ export function createStack(ops: StackOps, members: Members) {
     z.object({ prUrl: z.string() }),
     async ({ state, setState }) => {
       const issue = state.issue as Issue;
+
       const list = state.members
         .map(
           (m, i) =>
             `${i + 1}. #${m.number} ${m.title}${m.byHand ? " (by hand)" : ""}`,
         )
         .join("\n");
+
       const opened = !state.prUrl;
+
       const prUrl =
         state.prUrl ||
         (await ops.openStackPr(
@@ -410,6 +438,7 @@ export function createStack(ops: StackOps, members: Members) {
           issue.title,
           `## Summary\nThe stack for #${issue.number}: ${issue.title}\n\n## PRs\n${list}\n\nCloses #${issue.number}\n\nHuman review required; no auto-merge.`,
         ));
+
       if (opened) await ops.record(state.branch, "Stack PR opened", prUrl);
 
       await setState({ ...state, prUrl });

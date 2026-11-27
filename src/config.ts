@@ -15,9 +15,12 @@ export const installRoot = resolve(dirname(fileURLToPath(import.meta.url)), ".."
 /** The project this factory works on: the nearest ancestor of the working directory holding `.factory/config.json`. */
 export const projectRoot = (() => {
   const asked = process.env.FACTORY_PROJECT;
+
   if (asked) return resolve(asked);
+
   for (let dir = process.cwd(); ; dir = dirname(dir)) {
     if (existsSync(join(dir, ".factory/config.json"))) return dir;
+
     if (dirname(dir) === dir)
       throw new Error("No .factory/config.json here or above. Run `frankenstein setup` in your repository.");
   }
@@ -149,16 +152,22 @@ const fromOrigin = () => {
     return /([^/:]+\/[^/]+?)(?:\.git)?$/.exec(git("remote", "get-url", "origin"))?.[1];
   } catch { return undefined; }
 };
+
 const repo = raw.repo ?? fromOrigin() ?? basename(projectRoot);
 
 /** A bare adapter name ships with the factory; anything else is the project's own command. */
 function trackerCommand(command?: [string, ...string[]]): [string, ...string[]] {
   const [name, ...rest] = command ?? ["local"];
+
   if (rest.length || !/^[a-z][a-z0-9-]*$/.test(name)) return command!;
+
   const builtin = join(installRoot, "trackers", `${name}.mjs`);
+
   if (!existsSync(builtin)) throw new Error(`No tracker adapter called "${name}" (try local or github)`);
+
   return ["node", builtin];
 }
+
 const at = (path: string) => resolve(projectRoot, path.replaceAll("{repo}", basename(projectRoot)));
 
 export const config = {

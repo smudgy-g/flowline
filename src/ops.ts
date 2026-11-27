@@ -40,8 +40,10 @@ export const issueRepo = config.repo;
 export const factoryName = (() => {
   try {
     const name = readFileSync(`${homedir()}/.config/factory/name`, "utf8").trim();
+
     if (/^[a-z0-9][a-z0-9-]{0,30}$/.test(name)) return name;
   } catch {}
+
   return "factory";
 })();
 const claimLabel = `factory:${factoryName}`;
@@ -82,6 +84,7 @@ async function run(
         ...(cwd.startsWith(worktrees) && (bin === 'git' || bin === 'bash') ? await taskGitEnv(client,cwd) : {}), ...env },
       maxBuffer: 64 * 1024 * 1024,
     });
+
     return stdout.trim();
   } catch (error) {
     const e = error as { stderr?: string; stdout?: string; message: string };
@@ -90,39 +93,49 @@ async function run(
     );
   }
 }
+
 /**
  * Pause requests, one empty file each: `all`, or a run's id. They outlive server restarts, so a sync can come between
  * pausing and resuming.
  */
 const pausedDir = `${stateRoot}/paused`;
+
 const pauseTarget = (target: string) => {
   if (!/^(all|item-[A-Za-z0-9._-]{1,64})$/.test(target))
     throw new Error(`Can't pause ${target}`);
+
   return `${pausedDir}/${target}`;
 };
+
 export async function paused(runId: string): Promise<boolean> {
   return (
     (await exists(pauseTarget("all"))) || (await exists(pauseTarget(runId)))
   );
 }
+
 export async function setPaused(target: string, on: boolean): Promise<void> {
   if (!on) return rm(pauseTarget(target), { force: true });
+
   await mkdir(pausedDir, { recursive: true });
   await writeFile(pauseTarget(target), "");
 }
+
 /** What is paused: `all`, and the run ids asked for one by one. */
 export const pauseRequests = (): Promise<string[]> =>
   readdir(pausedDir).catch(() => []);
 
 /** A gate that runs longer than this is a hang: a normal full suite takes about 15 minutes. */
 const GATE_MINUTES = 40;
+
 /**
  * A work item's written history and check output live on the host, outside the sandbox mount, so code running in a
  * check cannot rewrite them. Agents get them read-only.
  */
 export const historyDir = (worktree: string) => {
   const item = basename(worktree);
+
   if (!/^[a-zA-Z0-9][a-zA-Z0-9-]*$/.test(item)) throw Error('Invalid work item');
+
   return `${stateRoot}/items/${item}`;
 };
 
@@ -174,6 +187,7 @@ async function checkWorktree(worktree: string): Promise<void> {
     (await realpath(worktree)) !== worktree
   )
     throw new Error(`Unexpected task worktree ${worktree}`);
+
   if (await exists(`${worktree}/.env`))
     throw new Error("Worktree .env is present");
 }
@@ -188,6 +202,7 @@ async function baseOf(worktree: string): Promise<string> {
     () => config.base,
   );
 }
+
 const forkPoint = async (worktree: string) =>
   run(worktree, "git", [
     "merge-base",
@@ -206,19 +221,24 @@ const forkPoint = async (worktree: string) =>
  */
 async function addSkills(dir: string, extra: string[] = []): Promise<void> {
   const names: string[] = [];
+
   for (const pack of config.skills.packs) {
     await cp(pack, `${dir}/.agents/skills`, { recursive: true, dereference: true });
     names.push(...(await readdir(pack)));
   }
+
   const exclude = `${await run(dir, "git", ["rev-parse", "--path-format=absolute", "--git-common-dir"])}/info/exclude`;
   const current = await readFile(exclude, "utf8").catch(() => "");
   const have = new Set(current.split("\n"));
+
   const missing = [
     "/.agents/artefacts/",
     ...names.map((name) => `/.agents/skills/${name}/`),
     ...extra,
   ].filter((line) => !have.has(line));
+
   if (!missing.length) return;
+
   await mkdir(dirname(exclude), { recursive: true });
   await appendFile(
     exclude,
@@ -231,23 +251,28 @@ async function changedFiles(
   since?: string,
 ): Promise<string[]> {
   since ??= await forkPoint(worktree);
+
   const tracked = await run(worktree, "git", [
     "diff",
     "--name-only",
     "-z",
     since,
   ]);
+
   const untracked = await run(worktree, "git", [
     "ls-files",
     "--others",
     "--exclude-standard",
     "-z",
   ]);
+
   const files = [
     ...new Set(`${tracked}\0${untracked}`.split("\0").filter(Boolean)),
   ].sort();
+
   for (const file of files) {
     const stat = await lstat(`${worktree}/${file}`).catch(() => null);
+
     if (
       stat?.isSymbolicLink() ||
       file.startsWith("/") ||
@@ -255,18 +280,21 @@ async function changedFiles(
     )
       throw new Error(`Unsafe task path: ${file}`);
   }
+
   return files;
 }
 
 /** sha256 over each changed file's path and blob hash: the exact content tests ran on and the human approved. */
 async function fingerprint(worktree: string): Promise<string> {
   const files = await changedFiles(worktree);
+
   const entries = await Promise.all(
     files.map(
       async (file) =>
         `${file}\0${await run(worktree, "git", ["hash-object", "--", file]).catch(() => "deleted")}`,
     ),
   );
+
   return sha256(entries.join("\0"));
 }
 
@@ -275,7 +303,9 @@ async function inspect(worktree: string) {
   const files = await changedFiles(worktree);
   const matches = (file: string, patterns: string[]) => patterns.some(p => matchesGlob(file, p));
   const blocked = files.filter(file => matches(file, config.paths.protected));
+
   if (blocked.length) throw new Error(`Protected paths changed: ${blocked.join(", ")}`);
+
   return { files, sensitive: files.filter(file => matches(file, config.paths.sensitive)) };
 }
 
@@ -283,6 +313,7 @@ async function inspect(worktree: string) {
 async function autofix(worktree: string): Promise<void> {
   const files = (await Promise.all((await changedFiles(worktree)).map(async f => await exists(`${worktree}/${f}`) ? f : ''))).filter(Boolean);
   const fixed = await projectCommands(worktree,config.commands.autofix,files);
+
   if (!fixed.ok) throw Error(`${fixed.gate}: ${fixed.output}`);
 }
 
@@ -292,7 +323,9 @@ async function autofix(worktree: string): Promise<void> {
  */
 async function coderChecked(worktree: string): Promise<boolean> {
   const recorded = await readFile(`${historyDir(worktree)}/checked-tree`, "utf8").catch(() => "");
+
   if (!recorded) return false;
+
   const now = await run(worktree, "bash", [`${installRoot}/scripts/content-tree.sh`]);
   return recorded.trim() === now;
 }
@@ -303,6 +336,7 @@ async function coderChecked(worktree: string): Promise<boolean> {
  */
 async function onBase(base: string, path: string): Promise<void> {
   const found = await run(projectRoot, "git", ["ls-tree", "--name-only", `origin/${base}`, "--", path]);
+
   if (!found)
     throw new Error(
       `${path} is not on origin/${base}. Commit it and push: each work item is built in a fresh worktree of that branch.`,
@@ -322,7 +356,9 @@ export async function newerUatInputs(
 ): Promise<{ head: string; files: string[] } | null> {
   await run(projectRoot, "git", ["fetch", "origin", config.base]).catch(() => "");
   const head = await run(projectRoot, "git", ["rev-parse", `origin/${config.base}`]);
+
   if (head === baseline) return null;
+
   const files = (
     await run(projectRoot, "git", [
       "diff",
@@ -335,12 +371,14 @@ export async function newerUatInputs(
   )
     .split("\n")
     .filter(Boolean);
+
   return files.length ? { head, files } : null;
 }
 
 export async function branchDiff(worktree: string): Promise<string> {
   await checkWorktree(worktree);
   const base = await forkPoint(worktree);
+
   const untracked = (
     await run(worktree, "git", [
       "ls-files",
@@ -351,8 +389,10 @@ export async function branchDiff(worktree: string): Promise<string> {
   )
     .split("\0")
     .filter(Boolean);
+
   // `git diff --no-index` exits 1 when the files differ, which is always here.
   const gitEnv = { ...inherited, ...await taskGitEnv(client,worktree) };
+
   const added = await Promise.all(
     untracked.map((file) =>
       exec("git", ["diff", "--no-index", "--no-ext-diff", "--no-textconv", "--", "/dev/null", file], {
@@ -363,6 +403,7 @@ export async function branchDiff(worktree: string): Promise<string> {
       ),
     ),
   );
+
   return [await run(worktree, "git", ["diff", base]), ...added].join("\n");
 }
 
@@ -399,20 +440,25 @@ export async function removeTask(
     }
 
     const uncommitted = await changedFiles(worktree, "HEAD");
+
     if (uncommitted.length && !discard)
       throw new Error(
         `Uncommitted changes in ${workItem}: ${uncommitted.join(", ")}`,
       );
   }
+
   await sandbox.remove(workItem,true);
   await sandbox.remove(workItem);
+
   if (await exists(worktree)) {
     // Remove by the trusted registration, not a .git pointer supplied by the project.
     await taskGitEnv(client,worktree);
     await rm(worktree,{recursive:true});
     await run(client,'git',['worktree','prune']);
   }
+
   if (await run(client,'git',['branch','--list',workItem])) await run(client,'git',['branch','-D',workItem]);
+
   await rm(`${historyDir(worktree)}/worktree`,{force:true});
 }
 
@@ -428,13 +474,18 @@ export async function closeIssue(
 export async function ownsWorktree(worktree: string): Promise<boolean> {
   return (await readFile(`${historyDir(worktree)}/worktree`,'utf8').catch(()=>'')) === worktree;
 }
+
 export async function prepareSandbox(item: string, worktree: string) {
   if (!await ownsWorktree(worktree)) throw Error('Worktree is not registered to this factory');
+
   await checkWorktree(worktree);
   const existing = (await sandbox.list()).find(s=>s.name === `fx-${item}`);
+
   if (!existing) await sandbox.create(item,worktree);
   else if (existing.workspaces?.length !== 1 || existing.workspaces[0] !== worktree) throw Error('Unexpected sandbox workspace');
+
   const setup = await projectCommands(worktree,config.commands.setup);
+
   if (!setup.ok) throw Error(`${setup.gate}: ${setup.output}`);
 }
 
@@ -467,6 +518,7 @@ export const realOps: Ops = {
     await run(projectRoot, "git", ["merge-base", "--is-ancestor", commit, `origin/${config.base}`]).catch(() => {
       throw new Error(`Acceptance inputs must be on ${config.base}: ${commit} is not`);
     });
+
     // Forward only along the base branch, so a run can't be pointed back at inputs it already failed.
     if (after)
       await run(projectRoot, "git", [
@@ -479,6 +531,7 @@ export const realOps: Ops = {
           `UAT inputs only move forward: ${commit} does not descend from ${after}`,
         );
       });
+
     // Only regular files, all present: a symlink in the inputs could point a UAT run outside the tree.
     const paths = (
       await run(projectRoot, "git", [
@@ -494,10 +547,13 @@ export const realOps: Ops = {
       .filter(Boolean)
       .map((line) => {
         const match = /^100(?:644|755) blob [a-f0-9]+\t(.+)$/.exec(line);
+
         if (!match)
           throw new Error(`Unsupported acceptance input at ${commit}: ${line}`);
+
         return match[1];
       });
+
     for (const input of acceptanceInputs)
       if (!paths.some((p) => p === input || p.startsWith(`${input}/`)))
         throw new Error(
@@ -511,26 +567,35 @@ export const realOps: Ops = {
     // Always branch from the remote tip; the local base checkout is never kept current.
     await run(client, "git", ["fetch", "origin", base]);
     await onBase(base, ".factory");
+
     // The tracker's id leads the name, so accept any safe ref: no option-like or traversing names.
     if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,120}$/.test(branch) || branch.includes('..')) throw Error('Invalid task branch');
+
     const worktree = `${worktrees}${branch}`;
+
     if (await exists(worktree)) {
       await checkWorktree(worktree);
+
       if (await run(worktree,'git',['branch','--show-current']) !== branch || await baseOf(worktree) !== base) throw Error('Unexpected task registration');
+
       await prepareSandbox(branch,worktree);
       return worktree;
     }
+
     await run(client, 'git', ['-c','core.hooksPath=/dev/null','worktree','add','-b',branch,worktree,`origin/${base}`]);
     await mkdir(historyDir(worktree),{recursive:true});
     await writeFile(`${historyDir(worktree)}/worktree`,worktree);
     await run(client, "git", ["config", `branch.${branch}.factoryBase`, base]);
     await checkWorktree(worktree);
     await mkdir(`${worktree}/.agents/artefacts`, { recursive: true });
+
     // A project that keeps AGENTS.md out of its repo (gitignored in the checkout) still gives every task one.
     const agentsMd =
       !(await exists(`${worktree}/AGENTS.md`)) &&
       (await exists(`${client}/AGENTS.md`));
+
     if (agentsMd) await cp(`${client}/AGENTS.md`, `${worktree}/AGENTS.md`);
+
     await addSkills(worktree, agentsMd ? ["/AGENTS.md"] : []);
 
     // A stack member reads the stack's design and history: what earlier PRs decided.
@@ -596,7 +661,9 @@ export const realOps: Ops = {
     const log = (text:string) => appendFile(checksLog(worktree),text);
     await autofix(worktree);
     const checked = await coderChecked(worktree);
+
     if (checked) await log('\nCoder checks passed on this exact tree.\n');
+
     const result = await projectCommands(worktree,[...(checked ? [] : config.commands.check),...config.commands.gates],[],log);
     await inspect(worktree);
     return result;
@@ -604,39 +671,49 @@ export const realOps: Ops = {
 
   async commitAndPush(worktree, message) {
     const branch = await run(worktree, "git", ["branch", "--show-current"]);
+
     if (!(await changedFiles(worktree)).length)
       throw new Error("No changes to publish");
+
     // Nothing new since the last push (a redelivery with the same code): publish nothing, UAT the pushed commit.
     const files = await changedFiles(worktree, "HEAD");
+
     if (files.length) {
       await run(worktree, "git", ["add", "--", ...files]);
       await run(worktree, "git", ["commit", "-m", message]);
     }
+
     try {
       await run(worktree, "git", ["push", "-u", "origin", branch]);
     } catch (error) {
       // Undo only the commit just made, so the approved files are uncommitted again and a retry starts clean.
       if (files.length)
         await run(worktree, "git", ["reset", "--mixed", "HEAD^"]);
+
       throw error;
     }
+
     return run(worktree, "git", ["rev-parse", "HEAD"]);
   },
 
   async pushedHead(worktree) {
     const branch = await run(worktree, "git", ["branch", "--show-current"]);
     const head = await run(worktree, "git", ["rev-parse", "HEAD"]);
+
     if (
       (await changedFiles(worktree, "HEAD")).length ||
       (await remoteHead(worktree, branch)) !== head
     )
       return "";
+
     return head;
   },
 
   async runUat(branch, baseline) {
     const commit = await remoteHead(client,branch);
+
     if (!/^[a-f0-9]{40,64}$/.test(commit) || await run(client,'git',['rev-parse',`refs/heads/${branch}`]) !== commit) throw Error('Local task commit does not match remote');
+
     await realOps.uatBaseline(baseline);
     const root = `${stateRoot}/cache`;
     await mkdir(root,{recursive:true});
@@ -649,11 +726,14 @@ export const realOps: Ops = {
     // Never reuse an offline sandbox, even after an infrastructure failure.
     await sandbox.remove(branch,true);
     await sandbox.create(branch,scratch,true,[inputs,source,...(config.acceptance.assets ? [config.acceptance.assets] : [])]);
+
     try {
       const result = await sandbox.exec(branch,config.acceptance.command,{offline:true,workdir:inputs,timeoutMinutes:60,
         env:{...config.acceptance.env,FACTORY_ACCEPTANCE:'1',INPUTS:inputs,PROJECT_ARCHIVE:`${source}/project.tar`,
           ...(config.acceptance.assets ? {ASSETS:config.acceptance.assets} : {}),REPO:config.repo,REF:branch,COMMIT:commit}});
+
       if (result.code !== 0) throw Error(`Acceptance adapter failed (${result.code}): ${result.output.slice(-3000)}`);
+
       const verdict = z.strictObject({ commit: z.literal(commit), pass: z.boolean(), detail: z.string().min(1) }).parse(JSON.parse(result.stdout ?? result.output));
       const report = { ref: branch, ...verdict };
       await writeFile(join(dir,'report.json'),JSON.stringify(report));
@@ -696,6 +776,7 @@ export const realStackOps: StackOps = {
   async createStackBranch(branch) {
     if (await run(client, "git", ["ls-remote", "--heads", "origin", branch]))
       return;
+
     await run(client, "git", ["fetch", "origin", config.base]);
     await run(client, "git", [
       "push",
@@ -721,6 +802,7 @@ export const realStackOps: StackOps = {
     await run(client, "git", ["fetch", "origin", config.base]);
     const dir = `${worktrees}review-${Date.now()}`;
     await run(client, "git", ["worktree", "add", "--detach", dir, `origin/${config.base}`]);
+
     try {
       await addSkills(dir);
       return await work((prompt) => realOps.runPi(dir, "review", prompt));

@@ -79,6 +79,7 @@ const STEPS: Record<string, { column: Column; doing: string }> = {
   uat: { column: "UAT", doing: "Running UAT" },
   "draft-pr": { column: "Draft PR", doing: "Opening the draft PR" },
 };
+
 /** Waits that are a person's decision; every other wait means something went wrong. */
 const ASKS: Record<string, string> = {
   plan: "Agree a plan",
@@ -88,6 +89,7 @@ const ASKS: Record<string, string> = {
   "design-approval": "Approve the design",
   "by-hand": "Do a step by hand",
 };
+
 const STUCK: Record<string, string> = {
   paused: "Paused",
   error: "A step failed",
@@ -142,6 +144,7 @@ export type Card = {
 /** A stack lives in the Stacks column; its members are ordinary cards in the stage columns. */
 async function stackCard(factory: Factory, v: RunView): Promise<Card> {
   const s = await stackState(factory, v.runId);
+
   const base = {
     issue: v.runId.replace("item-", ""),
     title: s?.issue?.title ?? v.runId,
@@ -159,7 +162,9 @@ async function stackCard(factory: Factory, v: RunView): Promise<Card> {
         }
       : undefined,
   };
+
   const total = s?.members.length ?? 0;
+
   if (v.waiting?.kind === "member-running")
     return {
       ...base,
@@ -168,6 +173,7 @@ async function stackCard(factory: Factory, v: RunView): Promise<Card> {
       waiting: v.waiting,
       token: tokenOf(v.waiting),
     };
+
   if (v.waiting) {
     const ask = ASKS[v.waiting.kind];
     return {
@@ -178,6 +184,7 @@ async function stackCard(factory: Factory, v: RunView): Promise<Card> {
       token: tokenOf(v.waiting),
     };
   }
+
   if (v.status === "success")
     return {
       ...base,
@@ -185,8 +192,10 @@ async function stackCard(factory: Factory, v: RunView): Promise<Card> {
       status: `Draft PR to ${config.base} open`,
       prUrl: v.prUrl,
     };
+
   if (v.status === "running")
     return { ...base, kind: "running", status: "Working…" };
+
   return { ...base, kind: "stuck", status: `Run ${v.status}`, error: v.error };
 }
 
@@ -208,9 +217,13 @@ export async function card(
     view(factory, runId),
     laneState(factory, runId),
   ]);
+
   if (!v) return null;
+
   if (v.workflow === "stack") return stackCard(factory, v);
+
   const step = STEPS[v.step ?? ""] ?? STEPS.intake;
+
   const base = {
     issue: runId.replace("item-", ""),
     title: lane?.issue?.title ?? runId,
@@ -234,6 +247,7 @@ export async function card(
         }
       : undefined,
   };
+
   if (v.waiting) {
     const ask = ASKS[v.waiting.kind];
     return {
@@ -251,11 +265,14 @@ export async function card(
           : undefined,
     };
   }
+
   if (v.status === "success") {
     const repo = v.prUrl?.startsWith('file://') && lane?.workItem ? githubRepo(githubRemote) : undefined;
+
     const note = repo && lane?.workItem
       ? await readFile(join(config.checkout, '.factory/delivered', `${lane.workItem}.md`), 'utf8').catch(() => '')
       : '';
+
     return {
       ...base,
       column: "Draft PR",
@@ -266,6 +283,7 @@ export async function card(
       githubPrUrl: repo ? prInNote(note, repo) : undefined,
     };
   }
+
   if (v.status === "running")
     return {
       ...base,
@@ -273,6 +291,7 @@ export async function card(
       kind: "running",
       status: step.doing,
     };
+
   return {
     ...base,
     column: step.column,
@@ -301,31 +320,41 @@ function resumeDataFor(
     kind === "plan-approval" ||
     kind === "outcome-approval" ||
     kind === "design-approval";
+
   if (body.action === "approve" && (decision || kind === "by-hand"))
     return { approve: true };
+
   if (body.action === "approve-latest-uat" && APPROVALS.includes(kind)) {
     if (!body.baseline) throw new Error("Which factory commit's journeys?");
+
     return { approve: true, baseline: body.baseline };
   }
+
   if (body.action === "approve-proposed" && kind === "design-approval")
     return { approve: true, useProposed: true };
+
   const parts = (body.parts ?? "")
     .split("\n")
     .map((l) => l.replace(/^\s*\d+[.)]\s*/, "").trim())
     .filter(Boolean);
+
   if (body.action === "split" && kind === "plan-approval") {
     if (parts.length < 2)
       throw new Error("A split needs at least two PRs, one per line");
+
     return { split: parts };
   }
+
   if (
     body.action === "reject" &&
     (decision || kind === "changed") &&
     body.why?.trim()
   )
     return { reject: body.why.trim() };
+
   if (body.action === "proceed" && kind === "no-change")
     return { retry: true, proceed: true };
+
   if (
     body.action === "retry" &&
     [
@@ -340,6 +369,7 @@ function resumeDataFor(
     return body.why?.trim()
       ? { retry: true, note: body.why.trim() }
       : { retry: true };
+
   if (
     body.action === "plan" &&
     kind === "plan" &&
@@ -347,8 +377,10 @@ function resumeDataFor(
     body.tests?.trim()
   )
     return { plan: { summary: body.summary.trim(), tests: body.tests.trim() } };
+
   if (body.action === "design" && kind === "design" && body.design?.trim())
     return { design: body.design.trim() };
+
   throw new Error(
     `Can't ${body.action ?? "do that"} here${body.action === "reject" ? " without saying why" : ""}`,
   );
@@ -357,21 +389,27 @@ function resumeDataFor(
 export function boardRoutes(factory: () => Factory) {
   /** Runs this server is resuming right now, so a double click can't resume one twice. */
   const busy = new Set<string>();
+
   const inBackground = (runId: string, work: () => Promise<unknown>) => {
     busy.add(runId);
     work()
       .catch((error) => console.error(`board: ${runId}:`, error))
       .finally(() => busy.delete(runId));
   };
+
   /** PR states from GitHub, looked up at most once a minute each. */
   const prCache = new Map<string, { at: number; state: Promise<string> }>();
+
   const cachedPrState = (url: string) => {
     const hit = prCache.get(url);
+
     if (hit && Date.now() - hit.at < 60_000) return hit.state;
+
     const state = prState(url).catch(() => "");
     prCache.set(url, { at: Date.now(), state });
     return state;
   };
+
   let issues = {
     at: 0,
     list: [] as Array<{
@@ -382,6 +420,7 @@ export function boardRoutes(factory: () => Factory) {
     }>,
     error: "",
   };
+
   const itemId = (raw: string) => ItemId.parse(raw);
 
   return [
@@ -401,9 +440,11 @@ export function boardRoutes(factory: () => Factory) {
       requiresAuth: false,
       handler: async (c) => {
         const runs = await list(factory());
+
         const cards = (
           await Promise.all(runs.map((r) => card(factory(), r.runId)))
         ).filter((x): x is Card => x !== null);
+
         for (const c of cards)
           c.executing =
             runs.find((r) => r.runId === runIdFor(c.issue))?.status ===
@@ -416,35 +457,44 @@ export function boardRoutes(factory: () => Factory) {
               token: undefined,
             });
         const boxes = await sandbox.list().catch(()=>null);
+
         for (const card of cards) if (card.lane?.workItem) {
           const item = card.lane.workItem;
           const offline = boxes?.find(s => s.name === `fx-uat-${item}`);
           card.sandbox = offline ? `${offline.status} (offline UAT)` : boxes?.find(s=>s.name === `fx-${item}`)?.status ?? (boxes ? 'missing' : 'unavailable');
         }
+
         const pauses = await pauseRequests();
         const allPaused = pauses.includes("all");
+
         for (const c of cards)
           if (allPaused || pauses.includes(runIdFor(c.issue))) {
             c.pauseRequested = true;
+
             if (c.kind === "running") c.status += " · pausing after this";
           }
+
         for (const c of cards)
           if (c.kind === "done" && c.prUrl) {
             const state = await cachedPrState(c.prUrl);
+
             if (state === "MERGED")
               Object.assign(c, {
                 merged: true,
                 status: "Accepted · ready to clean up",
               });
+
             if (state === "CLOSED")
               Object.assign(c, { status: "Rejected without merging" });
           }
+
         if (Date.now() - issues.at > 60_000) {
           issues = await factoryIssues().then(
             (list) => ({ at: Date.now(), list, error: "" }),
             (e: Error) => ({ at: Date.now(), list: [], error: e.message }),
           );
         }
+
         const waiting = issues.list
           .filter((i) => !cards.some((c) => c.issue === i.number))
           .map((i) => ({
@@ -460,6 +510,7 @@ export function boardRoutes(factory: () => Factory) {
                 ? "Stack · not started"
                 : "Not started",
           }));
+
         return c.json({
           factory: factoryName,
           repo: config.repo,
@@ -481,9 +532,12 @@ export function boardRoutes(factory: () => Factory) {
         const [v, lane] = await Promise.all([view(factory(), runId), laneState(factory(), runId)]);
         const repo = githubRepo(githubRemote);
         const file = lane?.workItem && join(config.checkout, '.factory/delivered', `${lane.workItem}.md`);
+
         if (!repo || !file || v?.status !== 'success' || v.prUrl !== `file://${file}` || busy.has(runId))
           return c.json({ error: 'No finished local change to open on GitHub' }, 409);
+
         busy.add(runId);
+
         try {
           const url = await openLocalPr(repo, lane.base, lane.workItem, file);
           return c.json({ url });
@@ -503,7 +557,9 @@ export function boardRoutes(factory: () => Factory) {
           factory(),
           runIdFor(itemId(c.req.param("issue"))),
         );
+
         if (!lane?.worktree) return c.text("No worktree yet", 404);
+
         return c.text(await branchDiff(lane.worktree));
       },
     }),
@@ -516,6 +572,7 @@ export function boardRoutes(factory: () => Factory) {
           factory(),
           runIdFor(itemId(c.req.param("issue"))),
         );
+
         const text = lane?.worktree
           ? await readFile(checksLog(lane.worktree), "utf8").catch(() =>
               // Runs from before the log moved into the worktree.
@@ -525,6 +582,7 @@ export function boardRoutes(factory: () => Factory) {
               ).catch(() => ""),
             )
           : "";
+
         // The last lines, without terminal colours: enough to see what a step is doing or where it hangs.
         return c.text(
           text
@@ -542,8 +600,11 @@ export function boardRoutes(factory: () => Factory) {
         const id = runIdFor(itemId(c.req.param('issue')));
         const {token} = await c.req.json<{token?:string}>();
         const [current,lane] = await Promise.all([card(factory(),id),laneState(factory(),id)]);
+
         if (!lane?.workItem || busy.has(id) || current?.waiting?.kind !== 'error' || !token || token !== current.token) return c.json({error:'No matching error wait'},409);
+
         busy.add(id);
+
         try {
           const wt = lane.worktree || `${config.worktrees}${lane.workItem}`;
           await sandbox.remove(lane.workItem,true);
@@ -561,7 +622,9 @@ export function boardRoutes(factory: () => Factory) {
       requiresAuth: false,
       handler: async (c) => {
         const { title, body } = await c.req.json<{ title?: string; body?: string }>();
+
         if (!title?.trim() || !body?.trim()) return c.json({ error: "A title and a description are required" }, 400);
+
         try {
           const { id } = await tracker.create("task", { title: title.trim(), body: body.trim() });
           issues.at = 0; // show it without waiting for the next poll
@@ -576,8 +639,10 @@ export function boardRoutes(factory: () => Factory) {
       handler: async (c) => {
         const issue = itemId(c.req.param("issue"));
         const runId = runIdFor(issue);
+
         if (busy.has(runId) || (await view(factory(), runId)))
           return c.json({ error: `${issue} already has a run` }, 409);
+
         const stack = issues.list.find((i) => i.number === issue)?.stack;
         inBackground(runId, () =>
           stack ? startStack(factory(), issue) : start(factory(), issue),
@@ -594,36 +659,46 @@ export function boardRoutes(factory: () => Factory) {
         const issue = itemId(c.req.param("issue"));
         const runId = runIdFor(issue);
         const { abandon } = await c.req.json<{ abandon?: boolean }>();
+
         const [v, lane] = await Promise.all([
           view(factory(), runId),
           laneState(factory(), runId),
         ]);
+
         if (!v || busy.has(runId) || v.status === "running")
           return c.json(
             { error: "It is still working; wait until it stops." },
             409,
           );
+
         const merged =
           v.status === "success" &&
           !!v.prUrl &&
           (await prState(v.prUrl)) === "MERGED";
+
         if (!merged && !abandon)
           return c.json({ error: "The PR is not merged yet." }, 409);
+
         busy.add(runId);
+
         try {
           if (lane?.workItem) {
             const wt = lane.worktree || `${config.worktrees}${lane.workItem}`;
+
             if (await ownsWorktree(wt)) await removeTask(wt,lane.workItem,!!abandon);
             else if (lane.worktree) throw Error('Worktree predates sandbox ownership records; clean it up with its original factory');
           }
+
           if (merged) await closeIssue(issue, `Merged in ${v.prUrl}`);
           else await releaseIssue(issue).catch(() => {}); // a run from before claims has no label
+
           await forget(factory(), runId);
         } catch (error) {
           return c.json({ error: (error as Error).message }, 500);
         } finally {
           busy.delete(runId);
         }
+
         // A stack waiting on this member moves on to its next one.
         for (const r of await list(factory())) {
           if (
@@ -636,6 +711,7 @@ export function boardRoutes(factory: () => Factory) {
               resume(factory(), r.runId, { retry: true }),
             );
         }
+
         return c.json({ ok: true });
       },
     }),
@@ -647,9 +723,11 @@ export function boardRoutes(factory: () => Factory) {
       handler: async (c) => {
         const raw = c.req.param("target");
         const { on } = await c.req.json<{ on?: boolean }>();
+
         try {
           const target = raw === "all" ? "all" : runIdFor(itemId(raw));
           await setPaused(target, !!on);
+
           if (!on)
             for (const runId of await resumable(factory(), target, paused))
               if (!busy.has(runId))
@@ -657,6 +735,7 @@ export function boardRoutes(factory: () => Factory) {
         } catch (error) {
           return c.json({ error: (error as Error).message }, 400);
         }
+
         return c.json({ ok: true });
       },
     }),
@@ -666,6 +745,7 @@ export function boardRoutes(factory: () => Factory) {
       requiresAuth: false,
       handler: async (c) => {
         const runId = runIdFor(itemId(c.req.param("issue")));
+
         const body = await c.req.json<{
           token?: string;
           action?: string;
@@ -676,18 +756,23 @@ export function boardRoutes(factory: () => Factory) {
           parts?: string;
           baseline?: string;
         }>();
+
         const v = await view(factory(), runId);
+
         if (busy.has(runId) || !v?.waiting || tokenOf(v.waiting) !== body.token)
           return c.json(
             { error: "This changed since you opened it. Have another look." },
             409,
           );
+
         let data: ResumeData;
+
         try {
           data = resumeDataFor(v.waiting.kind, body);
         } catch (error) {
           return c.json({ error: (error as Error).message }, 400);
         }
+
         inBackground(runId, () => resume(factory(), runId, data));
         return c.json({ ok: true }, 202);
       },

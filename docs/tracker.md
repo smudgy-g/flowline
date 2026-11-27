@@ -4,8 +4,7 @@ The lane needs sixteen things from a tracker: read an item, claim it, list what 
 
 ## The contract
 
-One **tracker adapter** per project, named in `.factory/config.json`. A bare name is one the factory ships
-(`local`, the default, or `github`); anything else is your own command:
+One **tracker adapter** per project, named in `.factory/config.json`. A bare name is one the factory ships (`local`, the default, or `github`); anything else is your own command:
 
 ```jsonc
 "tracker": { "command": ["github"], "env": {} }
@@ -15,7 +14,7 @@ One **tracker adapter** per project, named in `.factory/config.json`. A bare nam
 The factory runs `<command> <verb> [args…]` from the project root with that `env`, never a shell string. Input beyond the arguments arrives on stdin; the reply is one JSON value on stdout. A nonzero exit is an infrastructure failure, and the run waits as `error` rather than guessing. The adapter is trusted factory code and runs on the host, not in a sandbox: it holds whatever credentials the tracker needs, and no agent can call it.
 
 | Verb | Arguments | Stdin | Stdout |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `list` | — | — | `[{ "id", "title", "url", "stack": bool }]`, only unclaimed, startable items |
 | `read` | `id` | — | `{ "id", "title", "body", "url", "author", "comments": [string] }` |
 | `claim` | `id` `owner` | — | `{ "ok": true }`, or exit nonzero if another owner holds it |

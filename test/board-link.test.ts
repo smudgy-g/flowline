@@ -22,16 +22,23 @@ test('PR button uses the full delivery note as the draft body, reuses a PR and r
   await writeFile(file, '# Footer link\n\n## Verification\nProduction build passed\n');
   const calls: string[][] = [];
   let existing: { url: string; body: string; state: string } | undefined;
+
   const fake: Gh = async args => {
     calls.push(args);
+
     if (args[1] === 'view') {
       if (!existing) throw new Error('no PR');
+
       return JSON.stringify(existing);
     }
+
     if (args[1] === 'create') return url;
+
     if (args[1] === 'edit') return url;
+
     throw new Error('unexpected gh call');
   };
+
   assert.equal(await openLocalPr(repo, 'main', 'footer-link', file, fake), url);
   assert.deepEqual(calls[1], ['pr', 'create', '--repo', repo, '--draft', '--base', 'main', '--head', 'footer-link',
     '--title', 'Footer link', '--body-file', file]);

@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os';
 
 test('UAT pins inputs to the base branch and the source to the pushed commit, and removes the offline VM even on mismatch', async t => {
   const dir = await mkdtemp(join(tmpdir(), 'sbx-offline-')); t.after(() => rm(dir, { recursive: true, force: true }));
+
   const git = (cwd: string, ...args: string[]) =>
     execFileSync('git', ['-c', 'user.name=test', '-c', 'user.email=test@example.org', ...args], { cwd, encoding: 'utf8' }).trim();
 

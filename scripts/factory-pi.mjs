@@ -12,15 +12,21 @@ const testPaths = JSON.parse(process.env.FACTORY_TEST_PATHS ?? '[]')
 // A tool's path as Pi resolves it: a leading '@' is dropped and '~' is the home folder.
 function toolPath(root, path = '.') {
   let p = path.startsWith('@') ? path.slice(1) : path
+
   if (p === '~' || p.startsWith('~/')) p = homedir() + p.slice(1)
+
   return resolve(root, p)
 }
+
 // The path with every symlink in its existing part followed.
 function realish(file) {
   let p = file, rest = ''
+
   while (!existsSync(p)) { rest = join(basename(p), rest); p = dirname(p) }
+
   return join(realpathSync(p), rest)
 }
+
 const inside = (dir, file) => file === dir || file.startsWith(`${dir}${sep}`)
 
 // Shell is deliberately unavailable: shell grammar cannot be reliably guarded by a
@@ -31,41 +37,58 @@ const inside = (dir, file) => file === dir || file.startsWith(`${dir}${sep}`)
 // and it can call only the role's own tools.
 export function authorizeTool(worktree, role, event, readRoots = readable, tests = testPaths) {
   if (event.toolName === 'codemode') return undefined
+
   if (event.toolName === 'bash' || !['read', 'grep', 'find', 'ls', 'edit', 'write'].includes(event.toolName))
     return { block: true, reason: 'Unapproved tool' }
+
   const root = realpathSync(worktree)
+
   if (!['edit', 'write'].includes(event.toolName)) {
     const target = realish(toolPath(root, event.input.path))
     const roots = [root, ...readRoots.filter(existsSync).map(dir => realpathSync(dir))]
     return roots.some(dir => inside(dir, target)) ? undefined : { block: true, reason: 'Outside worktree' }
   }
+
   if (role === 'review' || role === 'planner') return { block: true, reason: 'Read-only role' }
+
   const file = toolPath(root, event.input.path)
   const local = relative(root, file)
+
   if (!local || local === '..' || local.startsWith(`..${sep}`) || file.startsWith(`${root}${sep}`) === false)
     return { block: true, reason: 'Outside worktree' }
+
   if (local.split(sep).includes('.git')) return { block: true, reason: 'Git metadata is read-only' }
+
   let parent = file
+
   while (parent !== root) {
     if (lstatSync(parent, { throwIfNoEntry: false })?.isSymbolicLink())
       return { block: true, reason: 'Symlink in write path' }
+
     parent = dirname(parent)
   }
+
   // The work item's and the stack's history (written by the factory) are read-only to every agent.
   const records = ['factory', 'stack'].map(name => join('.agents', 'artefacts', name))
+
   if (records.some(dir => local === dir || local.startsWith(`${dir}${sep}`)))
     return { block: true, reason: 'Factory history is read-only' }
+
   if (role === 'tester' && !tests.some(pattern => matchesGlob(local, pattern)))
     return { block: true, reason: 'Tester writes tests only' }
+
   return undefined
 }
 
 // What the task changed: uncommitted files, and commits since the base.
 function gitOptions(worktree) {
   const registration = JSON.parse(process.env.FACTORY_TASK_GIT || '{}')
+
   if (!registration.GIT_DIR || registration.GIT_WORK_TREE !== worktree) throw new Error('Missing trusted Git registration')
+
   return { cwd: worktree, encoding: 'utf8', env: { ...process.env, ...registration } }
 }
+
 function changedPaths(worktree) {
   return [...new Set([
     ...execFileSync('git', ['status', '--porcelain', '--untracked-files=all'], gitOptions(worktree))
@@ -77,6 +100,7 @@ function changedPaths(worktree) {
 
 const installRoot = resolve(dirname(new URL(import.meta.url).pathname), '..')
 const stateRoot = process.env.FACTORY_STATE_ROOT ?? join(installRoot, '.cache')
+
 // Installed, the factory is compiled JavaScript; in its own checkout it is TypeScript Node strips as it loads.
 const factoryModule = name =>
   pathToFileURL(join(installRoot, existsSync(join(installRoot, 'dist/config.js')) ? `dist/${name}.js` : `src/${name}.ts`)).href
@@ -92,29 +116,37 @@ export async function runCheck(worktree, signal) {
   const files = changedPaths(worktree).filter(f => existsSync(join(worktree, f)))
   const result = await projectCommands(worktree, [...config.commands.autofix, ...config.commands.check], files)
   signal?.throwIfAborted()
+
   if (result.ok) {
     const tree = execFileSync('bash', [join(installRoot, 'scripts/content-tree.sh')], gitOptions(worktree))
     const records = process.env.FACTORY_ITEM_RECORDS
     mkdirSync(records, { recursive: true })
     writeFileSync(join(records, 'checked-tree'), tree.trim())
   }
+
   return result.ok ? 'Project checks passed' : `${result.gate}: failed\n${result.output}`
 }
 
 export async function loadFactoryResources(worktree, role = 'review') {
   const install = process.env.PI_MANAGED_INSTALL_ROOT || join(homedir(), '.pi/agent/install')
   const version = readFileSync(join(install, 'current-version'), 'utf8').trim()
+
   if (!/^[\w.+-]+$/.test(version)) throw new Error('Invalid Pi installation')
+
   const dist = join(install, 'releases', version, 'node_modules/@earendil-works/pi-coding-agent/dist')
+
   const sdk = await import(pathToFileURL(join(dist, 'index.js')).href)
+
   // As the pi CLI does at start-up: honour HTTPS_PROXY (the factory VM's egress proxy). No-op without one.
   ;(await import(pathToFileURL(join(dist, 'core/http-dispatcher.js')).href)).configureHttpDispatcher()
+
   const loader = new sdk.DefaultResourceLoader({
     cwd: worktree, agentDir: sdk.getAgentDir(), noExtensions: true,
     extensionFactories: [sdk.createCodemodeExtension({ models: false }), (pi) => {
       pi.on('tool_call', (event) => authorizeTool(worktree, role, event))
     }],
   })
+
   await loader.reload()
   return { sdk, loader }
 }
@@ -150,7 +182,9 @@ export const isUsageLimit = (message = '') => /usage.?limit|insufficient_quota|q
 // Once Codex is out, later calls go straight to the fallback until the limit should have reset.
 const limitFile = `${stateRoot}/pi-limits/openai-codex`
 const LIMIT_HOURS = 1 // ponytail: fixed wait; read the reset time from the error if Codex sends one we can rely on
+
 const codexOut = () => { try { return Date.now() < Date.parse(readFileSync(limitFile, 'utf8')) } catch { return false } }
+
 function markCodexOut() {
   mkdirSync(dirname(limitFile), { recursive: true })
   writeFileSync(limitFile, new Date(Date.now() + LIMIT_HOURS * 3600_000).toISOString())
@@ -160,7 +194,9 @@ export function requireSkills(loader, names) {
   const skills = loader.getSkills().skills
   return names.map(name => {
     const skill = skills.find(skill => skill.name === name)
+
     if (!skill) throw new Error(`Missing /skill:${name} in factory worktree`)
+
     return skill
   })
 }
@@ -176,14 +212,22 @@ export function coderSkills(paths, { always, areas } = coderConfig) {
 
 async function main() {
   const [worktree, role, prompt] = process.argv.slice(2)
+
   if (!worktree || !['coder', 'tester', 'review', 'planner', 'check'].includes(role) || !prompt) throw new Error('Invalid Pi invocation')
+
   if (existsSync(join(worktree, '.env'))) throw new Error('Worktree .env is present')
+
   const { sdk, loader } = await loadFactoryResources(worktree, role)
+
   if (role === 'check') { requireSkills(loader, JSON.parse(prompt)); return }
+
   const named = [...prompt.matchAll(/\/skill:([a-z0-9-]+)/g)].map(match => match[1])
+
   const withSkills = (skills, rules = '') =>
     `${skills.map(skill => readFileSync(skill.filePath, 'utf8')).join('\n\n')}\n\n${rules}${prompt.replace(/\/skill:([a-z0-9-]+)/g, '$1')}`
+
   let instruction = named.length ? withSkills(requireSkills(loader, named)) : prompt
+
   if (role === 'coder') {
     const paths = changedPaths(worktree)
     // Paths the prompt names (e.g. the plan's step), so a step gets its area's skills before it touches the file.
@@ -191,25 +235,35 @@ async function main() {
     const skills = requireSkills(loader, [...new Set([...named, ...coderSkills([...paths, ...planned])])])
     instruction = withSkills(skills, "Follow AGENTS.md's testing rules.\n\n")
   }
+
   const runtime = await sdk.ModelRuntime.create()
   const key = existsSync(anthropicKeyFile) ? readFileSync(anthropicKeyFile, 'utf8').trim() : ''
+
   // A runtime key overrides the stored Anthropic login for this process only, and is never written to auth.json.
   if (key) await runtime.setRuntimeApiKey('anthropic', key)
+
   const [provider, id] = modelSpec(MODELS[role] ?? MODELS.coder)
+
   const fallback = provider === 'openai-codex' && runtime.hasConfiguredAuth('anthropic')
     ? runtime.getModel('anthropic', FALLBACKS[role] ?? FALLBACKS.coder) : undefined
+
   let model = fallback && codexOut() ? fallback : runtime.getModel(provider, id)
+
   if (!model || !runtime.hasConfiguredAuth(model.provider)) throw new Error('Pi model/auth unavailable')
+
   const { session } = await sdk.createAgentSession({
     cwd: worktree, model, modelRuntime: runtime, resourceLoader: loader,
     tools: role === 'review' || role === 'planner' ? ['read', 'grep', 'find', 'ls', 'codemode']
       : ['read', 'grep', 'find', 'ls', 'edit', 'write', 'codemode'],
     sessionManager: sdk.SessionManager.inMemory(),
   })
+
   const timer = setTimeout(() => { void session.abort() }, 30 * 60 * 1000)
+
   try {
     const lastReply = () => session.messages.filter(message => message.role === 'assistant').at(-1)
     await session.prompt(instruction)
+
     // Codex ran out mid-call: the same session goes on with Claude, keeping what it read and wrote so far.
     if (fallback && model !== fallback && lastReply()?.stopReason === 'error' && isUsageLimit(lastReply().errorMessage)) {
       markCodexOut()
@@ -217,8 +271,11 @@ async function main() {
       await session.setModel(fallback)
       await session.prompt('Your model hit its usage limit and you were switched to another. Carry on with the task from where you stopped; your edits so far are in the worktree.')
     }
+
     const last = lastReply()
+
     if (!last || last.stopReason === 'error' || last.stopReason === 'aborted') throw new Error(`Pi did not finish successfully: ${last?.errorMessage ?? last?.stopReason ?? 'no reply'}`)
+
     // Said first, so the history shows it; the factory reads JSON blocks and the "Unfinished steps" line from the end.
     const note = model !== fallback ? '' : `(Codex is at its usage limit: this ran on ${model.id}.)\n\n`
     process.stdout.write(note + (session.getLastAssistantText() || ''))
@@ -235,6 +292,7 @@ async function main() {
 export function ignoreCancelledStreams() {
   process.on('uncaughtException', (error) => {
     if (error?.code === 'ABORT_ERR') return
+
     console.error(error)
     process.exit(1)
   })

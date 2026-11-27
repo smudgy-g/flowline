@@ -26,7 +26,9 @@ import type { RunView } from './runs.ts'
 
 function show(v: RunView) {
   console.log(`${v.runId}: ${v.status}${v.prUrl ? ` ${v.prUrl}` : ''}${v.error ? `\n  error: ${v.error}` : ''}`)
+
   if (!v.waiting) return
+
   const { step, kind, message, ...details } = v.waiting
   console.log(`  waiting at ${step} (${kind}): ${message}`)
   for (const [key, value] of Object.entries(details)) console.log(`  ${key}: ${typeof value === 'string' ? value : JSON.stringify(value, null, 2)}`)
@@ -38,13 +40,18 @@ function show(v: RunView) {
  */
 async function confirm(v: RunView, issue: string): Promise<true> {
   const kind = v.waiting?.kind
+
   if (kind !== 'plan-approval' && kind !== 'outcome-approval') throw new Error(`${v.runId} is not waiting for an approval (${kind ?? v.status})`)
+
   if (!process.stdin.isTTY) throw new Error('approving needs an interactive terminal; only a human approves')
+
   show(v)
   const prompt = createInterface({ input: process.stdin, output: process.stdout })
   const answer = await prompt.question(`Type ${issue} to approve this ${kind === 'plan-approval' ? 'plan' : 'outcome'}: `)
   prompt.close()
+
   if (answer.trim() !== issue) throw new Error('Not approved')
+
   return true
 }
 
@@ -52,32 +59,43 @@ async function confirm(v: RunView, issue: string): Promise<true> {
 async function usage() {
   const source = await readFile(new URL(import.meta.url.replace(/\.js$/, '.ts')), 'utf8').catch(() =>
     readFile(new URL(import.meta.url), 'utf8'))
+
   console.log(source.split('\n').filter(l => l.startsWith('//')).slice(0, 21).join('\n').replaceAll('// ', '').replace(/^\/\//gm, ''))
 }
 
 async function main() {
   const { positionals, values } = parseArgs({ allowPositionals: true, options: { summary: { type: 'string' }, tests: { type: 'string' }, json: { type: 'boolean' }, note: { type: 'string' }, proceed: { type: 'boolean' }, baseline: { type: 'string' }, base: { type: 'string' } } })
   const [command, issueArg, ...rest] = positionals
+
   // `setup` is the one command that runs before a project is configured, so nothing that reads the config may be
   // imported until after it: every import below is deferred for that reason.
   if (command === 'setup') return (await import('./setup.ts')).setup(values.base)
+
   if (!command || command === 'help' || command === '--help') return usage()
+
   if (command === 'model') {
     if (!['planner', 'coder', 'review', 'tester'].includes(issueArg ?? '') || !rest[0] || rest.length !== 1)
       throw new Error('Usage: frankenstein model <planner|coder|review|tester> <provider/model>');
+
     const { setModel } = await import('./config.ts');
     await setModel(issueArg as 'planner' | 'coder' | 'review' | 'tester', rest[0]);
     return console.log(`${issueArg} will use ${rest[0]} on its next call. Retry a waiting run from the board; no restart needed.`);
   }
+
   if (command === 'board') {
     if (issueArg === 'start') return (await import('./board-process.ts')).boardStart();
+
     if (issueArg === 'stop') return (await import('./board-process.ts')).boardStop();
+
     if (issueArg === '_serve') return (await import('./board-process.ts')).boardServe();
+
     if (issueArg) throw new Error('Usage: frankenstein board [start|stop]');
+
     const { url } = await (await import('./server.ts')).startBoard();
     const { config, projectRoot } = await import('./config.ts');
     return console.log(`${config.repo} · ${projectRoot}\n${url}`);
   }
+
   const { databaseUrl } = await import('./database.ts')
   const { paused, realOps, realStackOps, setPaused, stateRoot } = await import('./ops.ts')
   const { createFactory, list, restart, resumable, resume, runIdFor, start, view } = await import('./runs.ts')
@@ -85,31 +103,46 @@ async function main() {
   const factory = createFactory(realOps, databaseUrl, [], realStackOps)
   const issue = issueArg ?? ''
   const id = runIdFor(issue)
+
   const needIssue = () => { if (!/^[A-Za-z0-9._-]{1,64}$/.test(issue)) throw new Error(`frankenstein ${command} <work item>`) }
+
   const print = (v: RunView | RunView[]) => values.json ? console.log(JSON.stringify(v, null, 2)) : [v].flat().forEach(show)
 
   switch (command) {
     case 'start': needIssue(); return print(await start(factory, issue))
+
     case 'status': {
       if (!issueArg) return print(await list(factory))
+
       needIssue()
       const v = await view(factory, id)
+
       if (!v) throw new Error(`No run for ${issue}`)
+
       return print(v)
     }
+
     case 'plan':
       needIssue()
+
       if (!values.summary || !values.tests) throw new Error('frankenstein plan <item> --summary "..." --tests "..."')
+
       return print(await resume(factory, id, { plan: { summary: values.summary, tests: values.tests } }))
+
     case 'approve': {
       needIssue()
       const v = await view(factory, id)
+
       if (!v) throw new Error(`No run for ${issue}`)
+
       return print(await resume(factory, id, { approve: await confirm(v, issue), baseline: values.baseline }))
     }
+
     case 'reject':
       needIssue()
+
       if (!rest.length) throw new Error('frankenstein reject <item> "<why>"')
+
       return print(await resume(factory, id, { reject: rest.join(' ') }))
     case 'findings':
       needIssue()
@@ -117,16 +150,23 @@ async function main() {
     case 'retry': needIssue(); return print(await resume(factory, id, { retry: true, note: values.note, proceed: values.proceed, baseline: values.baseline }))
     case 'restart': needIssue(); return print(await restart(factory, id))
     case 'pause':
+
     case 'resume': {
       if (issueArg !== 'all') needIssue()
+
       const target = issueArg === 'all' ? 'all' : id
       await setPaused(target, command === 'pause')
+
       if (command === 'pause') return console.log(`${target}: pausing before the next step`)
+
       const ids = await resumable(factory, target, paused)
+
       if (!ids.length) console.log(`${target}: not paused any more; no run was waiting on the pause`)
+
       // Together, as the board does: each runs until it next waits.
       return (await Promise.all(ids.map(runId => resume(factory, runId, {})))).forEach(v => print(v))
     }
+
     default:
       return usage()
   }

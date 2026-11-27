@@ -18,8 +18,8 @@ Start with [the config and first-work-item guide](docs/config.md); [the full set
 
 ## What lives where
 
-| | |
-|---|---|
+|  |  |
+| --- | --- |
 | **The package** | the factory's code, skill packs, tracker adapters. Installed once. |
 | **`.factory/` in your repo** | `config.json`, the acceptance adapter, work items with the local tracker. Committed and reviewed like any other code. |
 | **`~/.local/state/frankenstein/<project>/`** | the run database, logs and records for this checkout. Never in your repository, never inside a sandbox. |
@@ -52,4 +52,4 @@ A machine Docker Sandboxes supports (Ubuntu 24.04+ with KVM, Apple-silicon macOS
 
 ## Development
 
-`npm run check` type-checks and exercises the workflow with fake side effects. [docs/internals.md](docs/internals.md) is the implementation map.
+`pnpm run format` fixes blank-line spacing in TypeScript/JavaScript and formats the README and `docs/` without wrapping prose. `pnpm run check` enforces those rules, type-checks, and runs the tests with fake side effects. [docs/internals.md](docs/internals.md) is the implementation map.

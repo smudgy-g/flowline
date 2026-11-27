@@ -15,6 +15,7 @@ test('coder selects test and domain skills by changed path; missing skills stop 
       server: { paths: ['server/api/**', 'server/middleware/**'], skills: ['write-server-route'] },
     },
   }
+
   assert.deepEqual(coderSkills(['app/components/Card.vue', 'app/composables/useCard.ts', 'server/api/card.get.ts'], coder),
     ['ponytail', 'write-tests', 'write-component', 'write-composable', 'write-server-route'])
   assert.deepEqual(coderSkills(['shared/utils/card.ts'], coder), ['ponytail', 'write-tests'])
@@ -25,6 +26,7 @@ test('coder selects test and domain skills by changed path; missing skills stop 
 
 test('Pi tool guard restricts writes, symlinks, shell, and review roles', () => {
   const root = mkdtempSync(join(tmpdir(), 'factory-guard-'))
+
   try {
     mkdirSync(join(root, 'tests'))
     symlinkSync(tmpdir(), join(root, 'escape'))
@@ -54,10 +56,12 @@ test('Pi tool guard restricts writes, symlinks, shell, and review roles', () => 
 test('Pi tool guard confines reads to the worktree and the migrations repo', () => {
   const root = mkdtempSync(join(tmpdir(), 'factory-guard-'))
   const schema = mkdtempSync(join(tmpdir(), 'factory-schema-'))
+
   try {
     mkdirSync(join(root, 'app'))
     symlinkSync(tmpdir(), join(root, 'escape'))
     const call = (toolName, path) => ({ toolName, input: path === undefined ? { pattern: 'x' } : { path, pattern: 'x' } })
+
     for (const role of ['coder', 'tester', 'review']) {
       assert.equal(authorizeTool(root, role, call('read', 'app/page.vue'), [schema]), undefined)
       assert.equal(authorizeTool(root, role, call('grep', undefined), [schema]), undefined) // defaults to the worktree
@@ -83,6 +87,7 @@ test('content tree changes with any tracked or untracked edit, not with ignored 
   const dir = mkdtempSync(join(tmpdir(), 'tree-'))
   const tree = () => execFileSync('bash', [join(import.meta.dirname, 'content-tree.sh')], { cwd: dir, encoding: 'utf8' }).trim()
   const git = (...args) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', ...args], { cwd: dir })
+
   try {
     git('init', '-q')
     writeFileSync(join(dir, '.gitignore'), 'ignored/\n')

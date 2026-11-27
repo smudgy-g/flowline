@@ -104,10 +104,12 @@ const IssueSchema = z.object({
   author: z.string(),
   comments: z.array(z.string()),
 });
+
 const PlanSchema = z.object({
   summary: z.string().min(1),
   tests: z.string().min(1),
 });
+
 const FindingSchema = z.object({
   severity: z.enum(["critical", "high", "medium", "low"]),
   file: z.string(),
@@ -192,6 +194,7 @@ const Resume = z.object({
   /** At plan approval: split the work into these PRs, in order; this run keeps the first. */
   split: z.array(z.string()).optional(),
 });
+
 export const Waiting = z
   .object({ kind: z.string(), message: z.string() })
   .catchall(z.unknown());
@@ -240,11 +243,14 @@ export function guardedStep<
     suspendSchema: Waiting,
     execute: async (params: any) => {
       const isPaused = () => paused(params.runId);
+
       // A person's answer to a wait always goes through; a pause stops the run before the next step instead.
       if (!params.resumeData && (await isPaused()))
         return params.suspend(PAUSED);
+
       // Resumed from a pause, the step runs as if fresh: the pause was not a gate it asked for.
       const fromPause = params.suspendData?.kind === PAUSED.kind;
+
       const ctx = {
         ...params,
         paused: isPaused,
@@ -254,6 +260,7 @@ export function guardedStep<
           fromPause || params.resumeData?.retry ? undefined : params.suspendData,
         setState: (s: z.infer<S>) => params.setState(s),
       };
+
       try {
         return await run(ctx);
       } catch (error) {
@@ -285,12 +292,15 @@ export async function runReviewers(
   const results = await Promise.all(
     skills.map(async (skill) => {
       const reply = await call(prompt(skill));
+
       const findings =
         parseFindings(reply) ??
         parseFindings(await call(findingsFormatPrompt(reply)));
+
       return { skill, findings, proposed: parseProposedPrs(reply) };
     }),
   );
+
   return {
     findings: results.flatMap((r) =>
       r.findings ? tagged(r.skill, r.findings) : [],
@@ -339,10 +349,12 @@ export function createFastLane(ops: Ops) {
       const issue = await ops.readIssue(inputData.issue);
       await ops.claim(issue.number);
       const workItem = workItemName(issue);
+
       if (await ops.branchExists(workItem))
         throw new Error(
           `Branch ${workItem} already exists; another run or a person owns it`,
         );
+
       await setState({
         ...state,
         issue,
@@ -363,6 +375,7 @@ export function createFastLane(ops: Ops) {
       if (resumeData?.approve && suspendData?.kind === "plan-approval") {
         if (resumeData.baseline)
           state = await moveBaseline(state, resumeData.baseline);
+
         await ops.record(
           state.worktree,
           state.plan
@@ -379,6 +392,7 @@ export function createFastLane(ops: Ops) {
         });
         return { ok: true, approved: false };
       }
+
       if (resumeData?.plan) {
         return suspend({
           kind: "plan-approval",
@@ -386,6 +400,7 @@ export function createFastLane(ops: Ops) {
           plan: resumeData.plan,
         });
       }
+
       if (resumeData?.reject) {
         await ops.record(
           state.worktree,
@@ -397,6 +412,7 @@ export function createFastLane(ops: Ops) {
       // A split: this run keeps the first part and the plan is redrafted for it alone. The other parts become
       // sub-issues when a stack member finishes (stack.ts), or new issues now.
       const parts = (resumeData?.split ?? []).map((p) => p.trim()).filter(Boolean);
+
       if (parts.length > 1 && suspendData?.kind === "plan-approval") {
         state = {
           ...state,
@@ -404,26 +420,32 @@ export function createFastLane(ops: Ops) {
           split: { parts: parts.slice(1), created: [] },
         };
         await setState(state);
+
         if (state.base !== config.base)
           await ops.recordSplit(state.base, state.issue!.number, parts.slice(1));
+
         await ops.record(
           state.worktree,
           `You split this into ${parts.length} PRs`,
           parts.map((p, i) => `${i + 1}. ${p}`).join("\n"),
         );
       }
+
       // Restart-safe: issues for the other parts are created one at a time and saved, so none is made twice.
       if (state.base === config.base && state.split) {
         const { parts: rest, created } = state.split;
+
         for (const part of rest.slice(created.length)) {
           const { title, body } = splitIssue(
             state.issue!,
             part,
             state.lane ?? "fast",
           );
+
           created.push(await ops.createIssue(title, body));
           state = { ...state, split: { parts: rest, created: [...created] } };
           await setState(state);
+
           if (created.length === rest.length)
             await ops.commentOnIssue(
               state.issue!.number,
@@ -441,10 +463,12 @@ export function createFastLane(ops: Ops) {
       ]
         .filter(Boolean)
         .join("\n");
+
       const previous =
         suspendData?.kind === "plan-approval"
           ? (suspendData.plan as Plan)
           : state.plan;
+
       let drafted = parsePlan(
         await ops.runPi(
           state.worktree,
@@ -481,6 +505,7 @@ export function createFastLane(ops: Ops) {
       // times, then the plan waits for you with whatever is still open. A PR split is only ever proposed.
       // ponytail: a restart mid-review starts the drafting and review over; save each round if restarts get common.
       let reviews: Reviews | undefined;
+
       if (state.lane === "standard") {
         for (let revision = 0; ; revision++) {
           const current = drafted;
@@ -502,7 +527,9 @@ export function createFastLane(ops: Ops) {
             `Plan review${revision ? ` of revision ${revision}` : ""}: ${open.length ? `${open.length} to address` : "nothing to address"}`,
             describeReviews(reviews),
           );
+
           if (!open.length || revision >= MAX_PLAN_REVISIONS) break;
+
           const revised = parsePlan(
             await ops.runPi(
               state.worktree,
@@ -514,7 +541,9 @@ export function createFastLane(ops: Ops) {
               ),
             ),
           );
+
           if (!revised) break;
+
           drafted = revised;
           await ops.record(
             state.worktree,
@@ -557,6 +586,7 @@ export function createFastLane(ops: Ops) {
       } else {
         const worktree = await ops.provision(state.workItem, state.base);
         await setState({ ...state, worktree });
+
         if (state.lane === "standard")
           await ops.checkSkills(worktree, [
             ...new Set([...PLAN_REVIEWERS, ...CODE_REVIEWERS]),
@@ -620,8 +650,10 @@ export function createFastLane(ops: Ops) {
       // A plan without numbered steps (a spec pasted as is) is split by a read-only planner that reads the code, as
       // Swamp's controller did by hand. An unusable split leaves it one step, as before.
       let steps = state.steps;
+
       if (!steps) {
         steps = planSteps(state.plan!.summary);
+
         if (!steps.length)
           steps =
             parseSteps(
@@ -631,17 +663,21 @@ export function createFastLane(ops: Ops) {
                 breakdownPrompt(state.plan!),
               ),
             ) ?? [];
+
         state = { ...state, steps };
         await setState(state);
       }
+
       const replies: string[] = [];
       const round = cycles + 1;
       // Restarted while the whole-plan call's unfinished steps were being given out: that call is done.
       const resuming = !!state.rerun?.length;
+
       // Restarted mid-round, the steps already given are in the worktree, so there is nothing to compare against.
       const midRound =
         resuming ||
         ((state.stepsDone ?? 0) > 0 && state.stepsDone! < steps.length);
+
       const before = midRound ? null : await ops.fingerprint(state.worktree);
 
       const giveStep = async (index: number, again: boolean) => {
@@ -654,6 +690,7 @@ export function createFastLane(ops: Ops) {
             text: steps[index],
           }),
         );
+
         replies.push(`Step ${index + 1}${again ? " again" : ""}: ${stepReply}`);
         await ops.record(
           state.worktree,
@@ -666,6 +703,7 @@ export function createFastLane(ops: Ops) {
       for (let index = state.stepsDone ?? 0; index < steps.length; index++) {
         if (index > (state.stepsDone ?? 0) && (await paused()))
           return suspend(PAUSED);
+
         await giveStep(index, false);
         await setState({
           ...state,
@@ -680,6 +718,7 @@ export function createFastLane(ops: Ops) {
           "coder",
           coderPrompt(state.issue!, state.plan!, state.feedback, state.decisions),
         );
+
         replies.push(reply);
         const { files } = await ops.inspect(state.worktree);
         const rerun = parseUnfinished(reply, steps.length);
@@ -708,6 +747,7 @@ export function createFastLane(ops: Ops) {
       // A whole-plan call faced with big unfinished steps gives up on them; one call per step gets them done.
       while (state.rerun?.length) {
         if (await paused()) return suspend(PAUSED);
+
         const [step, ...rest] = state.rerun;
         await giveStep(step - 1, true);
         state = {
@@ -728,6 +768,7 @@ export function createFastLane(ops: Ops) {
         rerun: [],
         coderReply: replies.join("\n\n").slice(-6000) || state.coderReply,
       });
+
       // Nothing new to test: the coder stopped (blocked, or it thinks it's done). Its reply says why; testing would only
       // send it the same failure again. A changed plan or a fix outside the worktree comes first. Earlier rounds'
       // files don't count, so this compares with the round's start, not with the base.
@@ -740,6 +781,7 @@ export function createFastLane(ops: Ops) {
           message: `The coder changed nothing this round. It said:\n${reply.slice(-3000)}\n\nRetry with a note, or Proceed to test the change as it is.`,
           reply,
         });
+
       return { ok: true, approved: false };
     },
   );
@@ -750,6 +792,7 @@ export function createFastLane(ops: Ops) {
     Build,
     async ({ inputData, state, setState }) => {
       if (!inputData.ok) return inputData;
+
       const result = await ops.runGates(state.worktree);
 
       await ops.record(
@@ -765,6 +808,7 @@ export function createFastLane(ops: Ops) {
         });
         return { ok: false, approved: false };
       }
+
       await setState({
         ...state,
         testedDigest: await ops.fingerprint(state.worktree),
@@ -779,8 +823,10 @@ export function createFastLane(ops: Ops) {
     Build,
     async ({ inputData, state, setState, resumeData, suspendData, suspend }) => {
       if (!inputData.ok) return inputData;
+
       const call = (prompt: string) =>
         ops.runPi(state.worktree, "review", prompt);
+
       // Standard: four more reviewers alongside the main one. Their findings are kept while the main one's wait for
       // `frankenstein findings`, so answering that doesn't run them again.
       const extras: Promise<Reviews> =
@@ -799,9 +845,11 @@ export function createFastLane(ops: Ops) {
                   ),
                 call,
               );
+
       extras.catch(() => {}); // awaited below; a failure while the main review runs must not go unhandled
       let findings: Finding[] | null = resumeData?.findings ?? null;
       let reply = "";
+
       if (!findings) {
         reply = await call(
           reviewPrompt(`origin/${state.base}`, state.plan!, state.decisions),
@@ -810,7 +858,9 @@ export function createFastLane(ops: Ops) {
           parseFindings(reply) ??
           parseFindings(await call(findingsFormatPrompt(reply)));
       }
+
       const extra = await extras;
+
       if (!findings)
         return suspend({
           kind: "findings",
@@ -819,14 +869,17 @@ export function createFastLane(ops: Ops) {
           reply,
           extra,
         });
+
       if (extra.unparsed.length)
         await ops.record(
           state.worktree,
           `Round ${state.cycles} · skipped reviewers`,
           `No parseable findings from: ${extra.unparsed.join(", ")}.`,
         );
+
       findings = [...findings, ...extra.findings];
       const blocking = blockingFindings(findings);
+
       const lowNotes = findings
         .filter((f) => !blocking.includes(f))
         .map((f) => `${f.severity} ${f.file}:${f.line} ${f.description}`);
@@ -865,6 +918,7 @@ export function createFastLane(ops: Ops) {
       suspend,
     }) => {
       if (!inputData.ok) return inputData;
+
       if (resumeData?.reject) {
         await ops.record(
           state.worktree,
@@ -880,8 +934,10 @@ export function createFastLane(ops: Ops) {
         });
         return { ok: false, approved: false };
       }
+
       const { files, sensitive } = await ops.inspect(state.worktree);
       const digest = await ops.fingerprint(state.worktree);
+
       if (digest !== state.testedDigest)
         return suspend({
           kind: "changed",
@@ -889,11 +945,13 @@ export function createFastLane(ops: Ops) {
             'Files changed after testing. Revert those edits and frankenstein retry, or frankenstein reject "<why>" to send it back to implement.',
           files,
         });
+
       if (resumeData?.approve) {
         // Approval is for what was shown: the digest the gate suspended with.
         if (suspendData?.digest === digest) {
           if (resumeData.baseline)
             state = await moveBaseline(state, resumeData.baseline);
+
           await ops.record(
             state.worktree,
             `Round ${state.cycles} · you approved the change`,
@@ -905,6 +963,7 @@ export function createFastLane(ops: Ops) {
         }
         // Someone edited the worktree while the gate waited: ask again.
       }
+
       return suspend({
         kind: "outcome-approval",
         message:
@@ -935,8 +994,10 @@ export function createFastLane(ops: Ops) {
     Build,
     async ({ inputData, state, setState }) => {
       const digest = await ops.fingerprint(state.worktree);
+
       if (digest !== state.approvedDigest || digest !== state.testedDigest)
         throw new Error("Worktree differs from the approved, tested change");
+
       // The title only: GitHub appends "(#PR)" on squash, and the PR body already links the issue.
       const sha = await ops.commitAndPush(state.worktree, state.issue!.title);
       await setState({ ...state, pushedSha: sha });
@@ -947,13 +1008,17 @@ export function createFastLane(ops: Ops) {
   const uat = laneStep("uat", Build, Delivery, async ({ state, setState, resumeData }) => {
     // Retrying a failed acceptance run is where a fixed adapter arrives, so --baseline has to land here too.
     if (resumeData?.baseline) state = await moveBaseline(state, resumeData.baseline);
+
     if ((await ops.pushedHead(state.worktree)) !== state.pushedSha)
       throw new Error("Task branch moved since it was pushed");
+
     const { run, report } = await ops.runUat(state.workItem, state.baseline);
+
     if (report.commit !== state.pushedSha)
       throw new Error(
         `UAT tested ${report.commit}, expected ${state.pushedSha}`,
       );
+
     await ops.record(
       state.worktree,
       `UAT ${report.pass ? "passed" : "failed"} (run ${run})`,
@@ -989,6 +1054,7 @@ export function createFastLane(ops: Ops) {
     async ({ state, setState }) => {
       if ((await ops.pushedHead(state.worktree)) !== state.pushedSha)
         throw new Error("Task branch moved since UAT");
+
       const body = draftPrBody({
         issue: state.issue!,
         plan: state.plan!,
@@ -996,9 +1062,11 @@ export function createFastLane(ops: Ops) {
         uatRun: state.uatRun,
         lowNotes: state.lowNotes,
       });
+
       const prUrl =
         state.prUrl ||
         (await ops.openDraftPr(state.worktree, state.issue!.title, body));
+
       await setState({ ...state, prUrl });
 
       await ops.record(state.worktree, "Draft PR opened", prUrl);

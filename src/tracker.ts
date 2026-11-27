@@ -6,13 +6,16 @@ import { config, projectRoot } from './config.ts';
 
 /** Safe in a branch name, a path and a run id; the factory only ever echoes it. */
 export const ItemId = z.string().regex(/^[A-Za-z0-9._-]{1,64}$/);
+
 const Item = z.strictObject({
   id: ItemId, title: z.string().min(1), body: z.string(),
   url: z.string(), author: z.string(), comments: z.array(z.string()).default([]),
 });
+
 const Listed = z.array(z.strictObject({
   id: ItemId, title: z.string().min(1), url: z.string(), stack: z.boolean().default(false),
 }));
+
 const Ok = z.strictObject({ ok: z.literal(true) });
 const Created = z.strictObject({ id: ItemId });
 const Delivered = z.strictObject({ url: z.string().min(1) });
@@ -20,14 +23,17 @@ const State = z.strictObject({ open: z.boolean() });
 const Acceptance = z.strictObject({ state: z.enum(['open', 'accepted', 'rejected']) });
 
 type Call = (argv: string[], stdin: string) => Promise<string>;
+
 const call: Call = (argv, stdin) => new Promise((done, fail) => {
   const [bin, ...rest] = config.tracker.command;
+
   const child = execFile(bin, [...rest, ...argv], {
     cwd: projectRoot, maxBuffer: 32 * 1024 * 1024,
     env: { ...process.env, ...config.tracker.env, FACTORY_REPO: config.repo, FACTORY_BASE: config.base, FACTORY_CHECKOUT: config.checkout },
   }, (error, stdout, stderr) => error
     ? fail(new Error(`tracker ${argv[0]} failed: ${(stderr || error.message).slice(-2000)}`))
     : done(stdout));
+
   child.stdin?.end(stdin);
 });
 
@@ -35,9 +41,11 @@ const call: Call = (argv, stdin) => new Promise((done, fail) => {
 export function trackerClient(run: Call = call) {
   const verb = async <T>(shape: z.ZodType<T>, argv: string[], stdin = ''): Promise<T> => {
     const out = await run(argv, stdin);
+
     try { return shape.parse(JSON.parse(out)); }
     catch (error) { throw new Error(`tracker ${argv[0]} returned an unusable reply: ${(error as Error).message}`); }
   };
+
   return {
     list: () => verb(Listed, ['list']),
     read: (id: string) => verb(Item, ['read', id]),

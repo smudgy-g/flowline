@@ -45,6 +45,7 @@ test("work item names are short: number and meaningful title words", () => {
 test("reviewer findings come from the last json block, or not at all", () => {
   const reply =
     'Draft:\n```json\n{"findings":[]}\n```\nFinal:\n```json\n{"findings":[{"severity":"high","file":"a.ts","line":2,"description":"x"}]}\n```';
+
   assert.equal(parseFindings(reply)?.[0].severity, "high");
   assert.equal(parseFindings("no block"), null);
   assert.equal(
@@ -57,8 +58,10 @@ test("reviewer findings come from the last json block, or not at all", () => {
 
 test("parseStack reads the Factory stack form", async () => {
   const { parseStack, formSection } = await import("../src/rules.ts");
+
   const body =
     "### Outcome\n\nImport offers\n\n### PRs in order\n\n1. Database (by hand)\n2. Read offers\n3) Review them\nnot a PR line\n\n### Lane\n\nfast lane\n\n---\n\n## Design\n### Lane\n\nstandard";
+
   assert.deepEqual(parseStack(body), {
     members: [
       { title: "Database", byHand: true },

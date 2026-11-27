@@ -26,6 +26,7 @@ test('the local adapter keeps items in the repo, claims exclusively and accepts 
   await mkdir(join(root, '.factory/items'), { recursive: true });
   await writeFile(join(root, '.factory/items/health.md'), '# Add a health endpoint\n\n### Outcome\n\nIt answers 200.\n\n### Lane\n\nfast lane\n');
   const adapter = join(import.meta.dirname, '../trackers/local.mjs');
+
   const local = trackerClient(async (argv, stdin) =>
     execFileSync('node', [adapter, ...argv], { input: stdin, encoding: 'utf8', env: { ...process.env, FACTORY_CHECKOUT: root, FACTORY_BASE: 'main' } }));
 
@@ -84,10 +85,12 @@ test('local delivery recognises a GitHub squash merge without changing local mai
   await writeFile(fake, '#!/usr/bin/env node\nprocess.stdout.write(JSON.stringify([{state:"MERGED",headRefOid:process.env.FAKE_HEAD,baseRefName:process.env.FAKE_BASE}]))\n');
   await chmod(fake, 0o755);
   const adapter = join(import.meta.dirname, '../trackers/local.mjs');
+
   const local = (fakeHead: string, fakeBase: string) => trackerClient(async (argv, stdin) =>
     execFileSync('node', [adapter, ...argv], { input: stdin, encoding: 'utf8',
       env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, FACTORY_CHECKOUT: root, FACTORY_BASE: 'main',
         FAKE_HEAD: fakeHead, FAKE_BASE: fakeBase } }));
+
   const { url } = await local(head, 'main').deliver('footer', 'main', 'Footer', 'Tested');
   assert.deepEqual(await local(head, 'main').delivered(url), { state: 'accepted' });
   assert.deepEqual(await local('0'.repeat(40), 'main').delivered(url), { state: 'open' });

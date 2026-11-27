@@ -13,6 +13,7 @@ import { sandbox } from "./sandbox.ts";
 
 export async function startBoard(port = Number(process.env.PORT) || 4111, identity?: string) {
   await mkdir(stateRoot, { recursive: true });
+
   const factory: ReturnType<typeof createFactory> = createFactory(
     realOps,
     databaseUrl,
@@ -22,7 +23,9 @@ export async function startBoard(port = Number(process.env.PORT) || 4111, identi
 
   const app = new Hono();
   app.use("*", cors({ origin: BOARD_ORIGINS }));
+
   if (identity) app.get('/board/_identity', c => c.json({ identity, pid: process.pid }));
+
   // Mastra's ApiRoute union hides `handler` from the type, but a registered route always carries one.
   for (const route of (factory.getServer()?.apiRoutes ?? []) as Array<{ method: string; path: string; handler?: any }>)
     if (route.handler) app.on(route.method, route.path, route.handler);
@@ -35,6 +38,7 @@ export async function startBoard(port = Number(process.env.PORT) || 4111, identi
         ? new Error(`Port ${port} is already in use (another board, or an SSH tunnel). Free it, or run with PORT=<other>.`)
         : err));
   });
+
   await pruneSandboxes(factory);
   return { factory, server, url: `http://localhost:${port}/board` };
 }
@@ -46,17 +50,24 @@ export async function startBoard(port = Number(process.env.PORT) || 4111, identi
 async function pruneSandboxes(factory: ReturnType<typeof createFactory>) {
   try {
     const live = new Set<string>();
+
     for (const run of await list(factory)) {
       const item = (await laneState(factory, run.runId))?.workItem;
+
       if (item) live.add(item);
     }
+
     for (const box of await sandbox.list()) {
       const m = /^fx-(uat-)?(.+)$/.exec(box.name);
+
       if (!m || live.has(m[2])) continue;
+
       const mount = box.workspaces?.[0];
+
       const mine = m[1]
         ? mount?.startsWith(`${stateRoot}/cache/run-`) && mount.endsWith("/scratch")
         : mount === `${config.worktrees}${m[2]}`;
+
       if (mine) await sandbox.remove(m[2], !!m[1]);
     }
   } catch (err) {
