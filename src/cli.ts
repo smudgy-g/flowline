@@ -1,24 +1,24 @@
 #!/usr/bin/env node
-// frankenstein: run the factory on the repository you are standing in. Each command runs a work item's lane
+// flowline: run the factory on the repository you are standing in. Each command runs a work item's lane
 // until it next waits for someone.
 //
-//   frankenstein setup                        prepare this repository: .factory/config.json and an adapter stub
-//   frankenstein board                        foreground board (Ctrl-C stops it)
-//   frankenstein board start|stop             background board for this repo, with its own port
-//   frankenstein model <role> <provider/model>  switch planner/coder/review/tester, even while the board runs
-//   frankenstein start <item>                 start a run for a work item
-//   frankenstein status [<item>]              list runs, or show what one is waiting for
-//   frankenstein plan <item> --summary S --tests T   driver: record the agreed plan
-//   frankenstein approve <item> [--baseline SHA]     human: approve the plan or outcome shown (needs a terminal);
+//   flowline setup                        prepare this repository: .factory/config.json and an adapter stub
+//   flowline board                        foreground board (Ctrl-C stops it)
+//   flowline board start|stop             background board for this repo, with its own port
+//   flowline model <role> <provider/model>  switch planner/coder/review/tester, even while the board runs
+//   flowline start <item>                 start a run for a work item
+//   flowline status [<item>]              list runs, or show what one is waiting for
+//   flowline plan <item> --summary S --tests T   driver: record the agreed plan
+//   flowline approve <item> [--baseline SHA]     human: approve the plan or outcome shown (needs a terminal);
 //                                             --baseline moves acceptance to a later commit on the base branch
-//   frankenstein reject <item> <why>          human: send the plan or outcome back
-//   frankenstein findings <item> <findings.json>     driver: record review findings the reviewer could not format
-//   frankenstein retry <item> [--note N] [--proceed] [--baseline SHA]
+//   flowline reject <item> <why>          human: send the plan or outcome back
+//   flowline findings <item> <findings.json>     driver: record review findings the reviewer could not format
+//   flowline retry <item> [--note N] [--proceed] [--baseline SHA]
 //                                             continue after a fix; --proceed tests the change without a coder
 //                                             round, --baseline moves acceptance to a later base-branch commit
-//   frankenstein restart <item>               continue a run whose process died mid-step
-//   frankenstein pause <item|all>             stop the run (or every run) before its next step
-//   frankenstein resume <item|all>            lift the pause; paused runs carry on from where they stopped
+//   flowline restart <item>               continue a run whose process died mid-step
+//   flowline pause <item|all>             stop the run (or every run) before its next step
+//   flowline resume <item|all>            lift the pause; paused runs carry on from where they stopped
 import { mkdir, readFile } from 'node:fs/promises'
 import { createInterface } from 'node:readline/promises'
 import { parseArgs } from 'node:util'
@@ -75,7 +75,7 @@ async function main() {
 
   if (command === 'model') {
     if (!['planner', 'coder', 'review', 'tester'].includes(issueArg ?? '') || !rest[0] || rest.length !== 1)
-      throw new Error('Usage: frankenstein model <planner|coder|review|tester> <provider/model>');
+      throw new Error('Usage: flowline model <planner|coder|review|tester> <provider/model>');
 
     const { setModel } = await import('./config.ts');
     await setModel(issueArg as 'planner' | 'coder' | 'review' | 'tester', rest[0]);
@@ -89,7 +89,7 @@ async function main() {
 
     if (issueArg === '_serve') return (await import('./board-process.ts')).boardServe();
 
-    if (issueArg) throw new Error('Usage: frankenstein board [start|stop]');
+    if (issueArg) throw new Error('Usage: flowline board [start|stop]');
 
     const { url } = await (await import('./server.ts')).startBoard();
     const { config, projectRoot } = await import('./config.ts');
@@ -104,7 +104,7 @@ async function main() {
   const issue = issueArg ?? ''
   const id = runIdFor(issue)
 
-  const needIssue = () => { if (!/^[A-Za-z0-9._-]{1,64}$/.test(issue)) throw new Error(`frankenstein ${command} <work item>`) }
+  const needIssue = () => { if (!/^[A-Za-z0-9._-]{1,64}$/.test(issue)) throw new Error(`flowline ${command} <work item>`) }
 
   const print = (v: RunView | RunView[]) => values.json ? console.log(JSON.stringify(v, null, 2)) : [v].flat().forEach(show)
 
@@ -125,7 +125,7 @@ async function main() {
     case 'plan':
       needIssue()
 
-      if (!values.summary || !values.tests) throw new Error('frankenstein plan <item> --summary "..." --tests "..."')
+      if (!values.summary || !values.tests) throw new Error('flowline plan <item> --summary "..." --tests "..."')
 
       return print(await resume(factory, id, { plan: { summary: values.summary, tests: values.tests } }))
 
@@ -141,7 +141,7 @@ async function main() {
     case 'reject':
       needIssue()
 
-      if (!rest.length) throw new Error('frankenstein reject <item> "<why>"')
+      if (!rest.length) throw new Error('flowline reject <item> "<why>"')
 
       return print(await resume(factory, id, { reject: rest.join(' ') }))
     case 'findings':
@@ -172,4 +172,4 @@ async function main() {
   }
 }
 
-main().catch(error => { console.error(`frankenstein: ${error.message}`); process.exitCode = 1 })
+main().catch(error => { console.error(`flowline: ${error.message}`); process.exitCode = 1 })

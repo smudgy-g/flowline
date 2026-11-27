@@ -4,4 +4,4 @@ This repository is the factory, not its target: it is installed (`npm i -g`) and
 
 Target changes belong in a factory-created worktree, never in the project checkout, and every command that runs project code belongs in that work item's sandbox, never on the worker. Ask the human to choose the lane; plan, design and outcome approvals belong to them. A work item does not edit its factory, acceptance adapter or fixtures.
 
-Three roots, never one: the installed package (code, skills, trackers), the project (`.factory/`, worktrees), and this machine's state (`~/.local/state/frankenstein/<project>/`). Develop factory changes in a separate checkout, and upgrade only between workflow steps. Run `pnpm install --frozen-lockfile` and `pnpm run check` before shipping.
+Three roots, never one: the installed package (code, skills, trackers), the project (`.factory/`), and this machine's state (`~/.local/state/flowline/<project>/`, including default task worktrees). Upgrade the factory only between workflow steps. Run `pnpm install --frozen-lockfile` and `pnpm run check` before shipping.

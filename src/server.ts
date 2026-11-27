@@ -1,5 +1,5 @@
 // The board server: the same factory the CLI builds, with the board's routes on a plain HTTP server bound to
-// loopback. `frankenstein board` runs this.
+// loopback. `flowline board` runs this.
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { cors } from "hono/cors";

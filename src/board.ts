@@ -1,8 +1,8 @@
 // The board: every run as a card in the column of the stage it is at, with what it needs from you.
-// Served by `frankenstein board` at http://localhost:4111/board (assets are in board/).
+// Served by `flowline board` at http://localhost:4111/board (assets are in board/).
 //
 // Every action carries the token of the wait it was shown, so a click only applies to what was on screen.
-// Like `frankenstein approve`, this guards against mistakes, not against an agent with a shell in the VM (README.md).
+// Like `flowline approve`, this guards against mistakes, not against an agent with a shell in the VM (README.md).
 import { readFile } from "node:fs/promises";
 import { execFileSync } from "node:child_process";
 import { join } from 'node:path';

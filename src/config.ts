@@ -22,7 +22,7 @@ export const projectRoot = (() => {
     if (existsSync(join(dir, ".factory/config.json"))) return dir;
 
     if (dirname(dir) === dir)
-      throw new Error("No .factory/config.json here or above. Run `frankenstein setup` in your repository.");
+      throw new Error("No .factory/config.json here or above. Run `flowline setup` in your repository.");
   }
 })();
 
@@ -30,13 +30,12 @@ export const projectRoot = (() => {
  * Run state for this project on this machine: never in the repository, and keyed by its path so two checkouts of
  * the same repo cannot share a database.
  */
-export const stateRoot =
-  process.env.FACTORY_STATE ??
-  join(
-    process.env.XDG_STATE_HOME || join(homedir(), ".local/state"),
-    "frankenstein",
-    `${basename(projectRoot)}-${createHash("sha256").update(projectRoot).digest("hex").slice(0, 8)}`,
-  );
+const stateHome = process.env.XDG_STATE_HOME || join(homedir(), ".local/state");
+const stateName = `${basename(projectRoot)}-${createHash("sha256").update(projectRoot).digest("hex").slice(0, 8)}`;
+const legacyState = join(stateHome, "frankenstein", stateName);
+// Keep existing runs and board records reachable after the package rename.
+export const stateRoot = process.env.FACTORY_STATE ??
+  (existsSync(legacyState) ? legacyState : join(stateHome, "flowline", stateName));
 
 const SkillName = z.string().regex(/^[a-z0-9-]+$/);
 /** An executable and its literal arguments; never a shell string. */
@@ -56,7 +55,7 @@ const Config = z.strictObject({
   /** The branch every task builds on and a finished change is aimed at. */
   base: z.string().regex(/^[\w.-]+(\/[\w.-]+)*$/).default("main"),
   /** Where the factory creates each task's worktree, relative to the project. */
-  worktrees: z.string().default("../{repo}-worktrees"),
+  worktrees: z.string().optional(),
   /** Outside the worktree, what agents may read (e.g. a schema repository). */
   readable: z.array(z.string()).default([]),
   paths: z.strictObject({
@@ -170,13 +169,20 @@ function trackerCommand(command?: [string, ...string[]]): [string, ...string[]] 
 
 const at = (path: string) => resolve(projectRoot, path.replaceAll("{repo}", basename(projectRoot)));
 
+const legacyWorktrees = at("../{repo}-worktrees");
+
+const defaultWorktrees = existsSync(legacyWorktrees) &&
+  git("worktree", "list", "--porcelain").split("\n").some(line =>
+    line.startsWith(`worktree ${legacyWorktrees}/`) && existsSync(line.slice(9)))
+  ? legacyWorktrees : join(stateRoot, "worktrees");
+
 export const config = {
   repo,
   base: raw.base,
   /** The project checkout itself: the branch every worktree starts from. */
   checkout: projectRoot,
   /** Ends in `/`, so a prefix check can't match a sibling directory. */
-  worktrees: `${at(raw.worktrees)}/`,
+  worktrees: `${raw.worktrees ? at(raw.worktrees) : defaultWorktrees}/`,
   paths: raw.paths,
   sandbox: raw.sandbox,
   tracker: { ...raw.tracker, command: trackerCommand(raw.tracker.command) },

@@ -1,6 +1,6 @@
 # Running a work item
 
-**Where it runs:** on a machine with Docker Sandboxes, in the repository you ran `frankenstein setup` in. Each work item gets its own sandbox microVM, so agent-written code never executes on your host. For a remote machine, tunnel the board (`ssh -L 4111:127.0.0.1:4111 <host>`) and watch it from Linux, macOS or Windows.
+**Where it runs:** on a machine with Docker Sandboxes, in the repository you ran `flowline setup` in. Each work item gets its own sandbox microVM, so agent-written code never executes on your host. For a remote machine, tunnel the board (`ssh -L 4111:127.0.0.1:4111 <host>`) and watch it from Linux, macOS or Windows.
 
 1. Create a work item with a concrete outcome and acceptance criteria — a Markdown file under `.factory/items/` with the local tracker, an issue with the GitHub one — or **New item** on the board, which asks the tracker whichever it is. Describe the outcome, not the implementation. Choose **fast lane** or **standard**; standard adds plan reviewers (edge cases, missing steps, decisions left to the coder, wrong claims about the code) and more code reviewers. Mark it a stack (a `### PRs in order` section) when the work should ship as several changes; list the members in order and mark manual ones `(by hand)`.
 2. Start it from the board. The factory creates a task worktree from the configured base branch and its sandbox, then runs `commands.setup` inside it. The planner proposes a plan; you approve it, send it back, or split it into several changes. A stack starts with a design you approve.
@@ -13,6 +13,6 @@ Each card shows its sandbox state (running, stopped, missing). An error wait off
 
 - **Factory worktrees have no `.env`.** The factory refuses to run with one present. To look at a running app, use `scripts/preview.sh <work item>`.
 - **Each acceptance run gets its own sandbox,** created with no network; its ports are private to that microVM.
-- **Acceptance inputs are pinned to your base branch,** at the commit recorded when the item started: a task branch can edit `.factory/acceptance/` in its worktree and change nothing about how it is judged. Commit adapter changes whenever you like; running items keep what they started with, and `frankenstein approve|retry <item> --baseline <sha>` moves one forward onto newer inputs.
+- **Acceptance inputs are pinned to your base branch,** at the commit recorded when the item started: a task branch can edit `.factory/acceptance/` in its worktree and change nothing about how it is judged. Commit adapter changes whenever you like; running items keep what they started with, and `flowline approve|retry <item> --baseline <sha>` moves one forward onto newer inputs.
 - **A sandbox can write anything in its worktree.** The host's git calls use the checkout's private registration with hooks and fsmonitor off, and factory records live outside the mount, so a planted `.git` or hook never runs on the host.
-- The CLI uses the same database: `frankenstein start <item>`, `frankenstein status <item>`. Don't drive the same step from both the CLI and the board, and upgrade the factory only between steps.
+- The CLI uses the same database: `flowline start <item>`, `flowline status <item>`. Don't drive the same step from both the CLI and the board, and upgrade the factory only between steps.

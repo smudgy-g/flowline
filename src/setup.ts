@@ -1,4 +1,4 @@
-// `frankenstein setup`: turn the repository you are standing in into a project this factory can work on. It writes
+// `flowline setup`: turn the repository you are standing in into a project this factory can work on. It writes
 // `.factory/`, never anything else, and refuses rather than overwrite what is already there.
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
@@ -64,14 +64,17 @@ export async function setup(baseArg?: string) {
 
   console.log(`
 Next (examples and explanations: ${join(installRoot, "docs/config.md")}):
-  1. In .factory/config.json, replace the placeholder commands.gates with your project's real checks and tests.
-  2. Choose a sandbox.kit with your tools, or install them in commands.setup; allow only the download hosts needed.
-  3. Replace .factory/acceptance/run.sh with a real offline check of the pushed commit (the stub cannot pass).
-  4. Commit .factory (including .factory/.gitignore) and push it to ${base}. Do not ignore .factory/ itself:
+  1. Choose your work item tracker: local files in .factory/items/ (default), or GitHub Issues.
+     For GitHub Issues, set "tracker": { "command": ["github"] } in .factory/config.json and sign into gh
+     before your first run. Do not switch trackers during a run.
+  2. In .factory/config.json, replace the placeholder commands.gates with your project's real checks and tests.
+  3. Choose a sandbox.kit with your tools, or install them in commands.setup; allow only the download hosts needed.
+  4. Replace .factory/acceptance/run.sh with a real offline check of the pushed commit (the stub cannot pass).
+  5. Commit .factory (including .factory/.gitignore) and push it to ${base}. Do not ignore .factory/ itself:
      worktrees need the config, scripts and acceptance adapter. If acceptance.assets lives outside .factory/assets/,
      add that directory to your project's .gitignore separately. Claims are local locks; never commit them.
      Each work item is built in a fresh worktree of origin/${base}, so anything a sandbox runs must be on that branch.
-  5. Describe a work item in .factory/items/<name>.md (or use New item on the board), then: frankenstein board start`);
+  6. Describe a work item in .factory/items/<name>.md (or use New item on the board), then: flowline board start`);
 }
 
 function gitRoot() {

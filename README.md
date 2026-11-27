@@ -1,16 +1,18 @@
-# Frankenstein software factory
+# Flowline software factory
 
 Turn a work item into a reviewed, acceptance-tested change on the branch your team chooses, through an agreed plan, a coder, project checks, cold review, your approval and black-box acceptance. The board shows every stage and the human gates.
 
 Install it once; run it in any repository you have checked out.
 
 ```sh
-npm i -g frankenstein-factory
+npm i -g flowline-factory
 cd ~/code/your-project
-frankenstein setup        # writes .factory/, and says what your machine is still missing
-frankenstein board start  # background; prints this project's board URL (first free port from 4111)
-frankenstein board stop   # stops only this project's background board
+flowline setup        # writes .factory/, and says what your machine is still missing
+flowline board start  # background; prints this project's board URL (first free port from 4111)
+flowline board stop   # stops only this project's background board
 ```
+
+If upgrading from `frankenstein-factory`, stop its board before installing `flowline`; existing projects keep their `.factory/` setup and run state. Uninstall the old package after switching commands so two boards cannot operate on the same runs.
 
 Each work item runs in **its own Docker Sandbox** (`sbx`): a microVM with its own kernel and Docker engine. The factory itself — board, run database, git, credentials and the Pi agents — stays on your machine. Every command that executes project code (install, fixes, checks, tests, preview, acceptance) runs inside the item's sandbox, so agent-written code never runs on your host and one work item cannot touch another.
 
@@ -22,19 +24,19 @@ Start with [the config and first-work-item guide](docs/config.md); [the full set
 | --- | --- |
 | **The package** | the factory's code, skill packs, tracker adapters. Installed once. |
 | **`.factory/` in your repo** | `config.json`, the acceptance adapter, work items with the local tracker. Committed and reviewed like any other code. |
-| **`~/.local/state/frankenstein/<project>/`** | the run database, logs and records for this checkout. Never in your repository, never inside a sandbox. |
+| **`~/.local/state/flowline/<project>/`** | the run database, logs and records for this checkout. Existing installations keep using their `~/.local/state/frankenstein/` directory. Never in your repository, never inside a sandbox. |
 
 ## Configure
 
-`.factory/config.json` is the whole of it; `frankenstein setup` writes a starting point. [How to choose each setting](docs/config.md).
+`.factory/config.json` is the whole of it; `flowline setup` writes a starting point. [How to choose each setting](docs/config.md).
 
-- `base` is the branch work starts from and changes are aimed at; `worktrees` says where task worktrees go.
+- `base` is the branch work starts from and changes are aimed at; task worktrees default to the per-project machine-state directory (not `.factory/`). `worktrees` overrides their location.
 - `commands` are what the factory runs in a work item's sandbox: `setup` prepares a fresh worktree, `autofix` runs formatters, `check` is the coder's fast feedback, and `gates` are the required checks including the full suite. Each is a **list of commands**, each command an executable plus literal arguments, never a shell string. `{changedCode}` expands to changed files matching `changedCode` globs.
 - `sandbox.kit` is an image carrying your toolchain and GNU `timeout`; `allowlist` is the exact hosts a build sandbox may reach, normally only package registries. Start `maxConcurrent` at 1 on a small machine. Never bake credentials into a kit.
 - `paths.tests` limits where the tester role may write, `paths.protected` blocks changes (keep `.factory/**` there), `paths.sensitive` flags them for you at the approval gate.
 - `tracker` names where work items come from: `local` (the default) keeps them as Markdown in your repo under `.factory/items/<id>.md` and needs no account or network; `github` uses issues and draft PRs. Write your own rather than changing factory code — [the contract](docs/tracker.md) is twelve verbs.
 - `skills.packs` are copied into each worktree; a bare name is one of the factory's, a path is yours ([guide](skills/README.md)).
-- `models` selects planner/coder/review/tester models. Change one during a paused run with `frankenstein model planner provider/model`, then press **Retry**; only model choices hot-reload, so the board need not restart ([guide](docs/setup.md#switching-model-accounts-while-a-run-waits)).
+- `models` selects planner/coder/review/tester models. Change one during a paused run with `flowline model planner provider/model`, then press **Retry**; only model choices hot-reload, so the board need not restart ([guide](docs/setup.md#switching-model-accounts-while-a-run-waits)).
 
 [`examples/go.factory.json`](examples/go.factory.json) is a worked profile.
 

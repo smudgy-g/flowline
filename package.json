@@ -1,10 +1,10 @@
 {
-  "name": "frankenstein-factory",
+  "name": "flowline",
   "version": "0.1.0",
   "description": "A software factory: a work item goes in, a reviewed, acceptance-tested change comes out.",
   "type": "module",
   "bin": {
-    "frankenstein": "dist/cli.js"
+    "flowline": "dist/cli.js"
   },
   "engines": {
     "node": ">=22.18"

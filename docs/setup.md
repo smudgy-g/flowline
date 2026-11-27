@@ -8,7 +8,7 @@ The factory is installed once and run inside your repository. Three directories 
 | --- | --- |
 | the installed package | the factory's code, skills and tracker adapters |
 | `.factory/` in your repo | config, the acceptance adapter, and work items with the local tracker |
-| `~/.local/state/frankenstein/<project>/` | the run database, logs and records for this checkout |
+| `~/.local/state/flowline/<project>/` | the run database, logs and records for this checkout; existing installations continue using `~/.local/state/frankenstein/` |
 
 ## 1. A machine that can run sandboxes
 
@@ -27,8 +27,8 @@ sbx policy init deny-all                      # the factory refuses to run witho
 ```sh
 curl -fsSL https://nodejs.org/dist/v22.19.0/node-v22.19.0-linux-x64.tar.xz -o /tmp/node.tar.xz
 sudo tar -xJf /tmp/node.tar.xz -C /usr/local --strip-components=1
-sudo npm i -g frankenstein-factory @earendil-works/pi-coding-agent
-frankenstein --help
+sudo npm i -g flowline-factory @earendil-works/pi-coding-agent
+flowline --help
 ```
 
 Sign Pi in (`pi` once interactively), or copy `~/.pi/agent/auth.json` from a machine that is already signed in. `pi --list-models` must list models.
@@ -62,7 +62,7 @@ To switch the model for one role **while the board is still running**:
 
 ```sh
 pi --list-models                                 # choose a model your account can use
-frankenstein model planner openai-codex/gpt-6.2-sol
+flowline model planner openai-codex/gpt-6.2-sol
 # The project now has "models": { "planner": "openai-codex/gpt-6.2-sol" } in .factory/config.json.
 # Return to the board and press Retry on the paused card. No board restart or new run.
 ```
@@ -75,7 +75,7 @@ pi auth logout anthropic                  # only if you want to switch accounts
 pi auth login anthropic                   # interactive, stored only on the host
 ```
 
-To use a different provider, sign in via `pi auth login <provider>` and set the role with `frankenstein model`. The planner defaults to `anthropic/claude-opus-5-5`; coder, review and tester each have separate defaults. `FACTORY_MODEL_<ROLE>` environment variables are still available, but changing one requires a board restart; a model set in `.factory/config.json` takes precedence. Logging into another account for the _same_ provider is read afresh at the next Pi call. Neither change requires clearing run state.
+To use a different provider, sign in via `pi auth login <provider>` and set the role with `flowline model`. The planner defaults to `anthropic/claude-opus-5-5`; coder, review and tester each have separate defaults. `FACTORY_MODEL_<ROLE>` environment variables are still available, but changing one requires a board restart; a model set in `.factory/config.json` takes precedence. Logging into another account for the _same_ provider is read afresh at the next Pi call. Neither change requires clearing run state.
 
 ### Git over SSH from the board
 
@@ -84,7 +84,7 @@ A terminal `git push` can ask for an SSH-key passphrase. The board cannot: its g
 ```sh
 ssh-add ~/.ssh/id_personal      # enter the passphrase once, locally; use your own key path
 ssh-add -l                      # confirms the agent holds it
-frankenstein board start        # inherits SSH_AUTH_SOCK from this shell
+flowline board start        # inherits SSH_AUTH_SOCK from this shell
 ```
 
 If `ssh-add` says there is no agent, start one with `eval "$(ssh-agent -s)"` in that shell, then `ssh-add` and start the board there. Check `git ls-remote origin HEAD` before starting a run. This access is host-only; no key or agent socket is mounted into a sandbox.
@@ -93,7 +93,7 @@ If `ssh-add` says there is no agent, start one with `eval "$(ssh-agent -s)"` in 
 
 ```sh
 cd ~/code/your-project
-frankenstein setup
+flowline setup
 ```
 
 It writes `.factory/config.json`, `.factory/items/`, an acceptance stub and `.factory/.gitignore`, then reports what your machine is still missing. It never touches anything outside `.factory/`, and never overwrites what is already there. The nested ignore file excludes only `assets/` (downloaded acceptance inputs that are rebuilt locally) and `claims/` (temporary work-item locks that must not be shared across clones). An existing `.factory/.gitignore` is left alone: add those two patterns yourself if they are absent. If your assets live elsewhere, ignore that path in your project's own `.gitignore`.
@@ -146,7 +146,7 @@ If the setup prompts are unfamiliar, start with the [field-by-field config and w
 }
 ```
 
-`setup`, `autofix`, `check` and `gates` are **lists of commands**, each command an argv array — `[["npm", "test"]]`, never `["npm", "test"]` and never a shell string. Start `maxConcurrent` at 1: a 2 GiB sandbox on a 4 GiB machine leaves no room for a second. `worktrees` defaults to a sibling directory of your repository.
+`setup`, `autofix`, `check` and `gates` are **lists of commands**, each command an argv array — `[["npm", "test"]]`, never `["npm", "test"]` and never a shell string. Start `maxConcurrent` at 1: a 2 GiB sandbox on a 4 GiB machine leaves no room for a second. Task worktrees default to `~/.local/state/flowline/<project>/worktrees/`, outside the repository. If a project has active worktrees in the old sibling directory, it continues using that directory until they are cleaned up; an explicit `worktrees` setting is unchanged.
 
 Everything else has a default: `base` is your current branch at setup, `tracker` is the local one, and skills are the factory's `core` pack.
 
@@ -176,11 +176,11 @@ fast lane
 ## 7. Run it
 
 ```sh
-frankenstein board start  # prints the URL, e.g. http://localhost:4111/board
-frankenstein status
+flowline board start  # prints the URL, e.g. http://localhost:4111/board
+flowline status
 ```
 
-`board start` runs in the background and chooses the first free port from 4111–4130 (or the explicit `PORT` you set). In another project, run the same command: it gets a separate board URL, state directory and process. `frankenstein board stop` stops **only the background board of your current project**. Run it from that project's directory; it verifies the local server's identity before signalling its PID. `frankenstein board` without a subcommand remains the foreground, Ctrl-C version, and is not managed by `board stop`. Startup logs are in the project's machine-local state directory as `board.log`. The board is bound to loopback and unauthenticated. Start it from a shell with your SSH agent set up so Git can use the unlocked key. If an older foreground board is already running, stop that one with Ctrl-C before switching to `board start`.
+`board start` runs in the background and chooses the first free port from 4111–4130 (or the explicit `PORT` you set). In another project, run the same command: it gets a separate board URL, state directory and process. `flowline board stop` stops **only the background board of your current project**. Run it from that project's directory; it verifies the local server's identity before signalling its PID. `flowline board` without a subcommand remains the foreground, Ctrl-C version, and is not managed by `board stop`. Startup logs are in the project's machine-local state directory as `board.log`. The board is bound to loopback and unauthenticated. Start it from a shell with your SSH agent set up so Git can use the unlocked key. If an older foreground board is already running, stop that one with Ctrl-C before switching to `board start`.
 
 For a remote machine, put it in `~/.ssh/config` once, with the board's tunnel built in:
 
@@ -192,7 +192,7 @@ Host factory-worker
   LocalForward 4111 127.0.0.1:4111
 ```
 
-Start that remote board with `PORT=4111 frankenstein board start` to match this fixed tunnel (or update both `LocalForward` ports to the board's printed port). Then `ssh factory-worker` gives you a shell **and** the tunnel, `ssh -fN factory-worker` the tunnel alone, and `ssh factory-worker 'cd ~/code/your-project && frankenstein status'` runs one command. The board is unauthenticated: keep it on loopback and reach it only through the tunnel.
+Start that remote board with `PORT=4111 flowline board start` to match this fixed tunnel (or update both `LocalForward` ports to the board's printed port). Then `ssh factory-worker` gives you a shell **and** the tunnel, `ssh -fN factory-worker` the tunnel alone, and `ssh factory-worker 'cd ~/code/your-project && flowline status'` runs one command. The board is unauthenticated: keep it on loopback and reach it only through the tunnel.
 
 The board remembers other factories you have tunnelled in, in the browser's local storage, and shows a red banner for any it cannot reach. **`/board?peers=`** forgets them; `?peers=worker2:4112` sets them.
 
@@ -226,7 +226,7 @@ Exit zero for any completed verdict, including a failure. Exit nonzero only for 
 
 ```sh
 git commit -m "Acceptance for …" .factory/acceptance/run.sh && git push origin main
-frankenstein retry <item> --baseline $(git rev-parse origin/main)
+flowline retry <item> --baseline $(git rev-parse origin/main)
 ```
 
 Baselines only move forward, and only along the base branch.
@@ -237,7 +237,7 @@ Every one of these came up during a real setup.
 
 | What you see | Why | Fix |
 | --- | --- | --- |
-| `No .factory/config.json here or above` | You are outside a set-up repository | `cd` into it, or `frankenstein setup` |
+| `No .factory/config.json here or above` | You are outside a set-up repository | `cd` into it, or `flowline setup` |
 | `.factory/… is not on <base>` | A sandbox would not see it: worktrees come from `origin/<base>` | Commit `.factory` and push |
 | `node: error while loading shared libraries: libatomic.so.1` | Node 26 needs a library the `shell` kit lacks | Install Node 24 in `setup`, or use a kit that has it |
 | `corepack: command not found` | Current Node no longer ships corepack | `npm install -g --prefix "$HOME/node" pnpm@<version>` |
@@ -250,14 +250,14 @@ Every one of these came up during a real setup.
 | `Worker needs an exclusive deny-all network policy` | `sbx policy init deny-all` was never run, or another project widened it | Re-run it; give the machine its own daemon |
 | `node: command not found` inside a sandbox | The kit has no Node | Step 4: install it in `setup`, or publish an image that has it |
 | `tar … xz: Cannot exec` inside a sandbox | The kit has no `xz` | Fetch the `.tar.gz` build |
-| `Work item X already has a run` | A run exists, including a failed one | `frankenstein status X`, then `retry`; clean up to start over |
-| `This state belongs to <repo> via <tracker>` | The state directory was built against a different repo or tracker | Clear `~/.local/state/frankenstein/<project>/` |
+| `Work item X already has a run` | A run exists, including a failed one | `flowline status X`, then `retry`; clean up to start over |
+| `This state belongs to <repo> via <tracker>` | The state directory was built against a different repo or tracker | Inspect the state directory (including the legacy `frankenstein/` location) before clearing it; this deletes runs |
 | Nothing listed, title shows "Work item" | The item file has no `# ` heading | Add one |
 | `Can't reach the <name> factory` banner | A peer factory remembered from an earlier session | Open `/board?peers=` to forget it |
 | `Acceptance adapter failed (2): Acceptance is not configured` | The shipped stub, which never passes | Step 8 |
-| A fixed adapter still fails the same way | The run is pinned to the base-branch commit it started at | `frankenstein retry <item> --baseline $(git rev-parse origin/main)` |
+| A fixed adapter still fails the same way | The run is pinned to the base-branch commit it started at | `flowline retry <item> --baseline $(git rev-parse origin/main)` |
 | `Acceptance inputs must be on <base>` | The baseline commit is not on the base branch | Push the fix to `base` first |
 | `UAT tested <sha>, expected <sha>` | The adapter reported a commit other than `$COMMIT` | Echo `$COMMIT` in the verdict |
 | `Sandbox: missing` on a card | The sandbox was removed under a running item | **Recreate sandbox** on the card, then **Retry** |
-| `plan failed … 429 rate_limit_error` | The selected provider is throttling the account, not necessarily an expired login | Wait, change accounts with `pi auth login`, or `frankenstein model planner provider/model`; then **Retry** |
-| SSH key passphrase prompts, or `Permission denied (publickey)` from a board run | The board process has no unlocked key in its SSH agent | `ssh-add` before `frankenstein board start`; test `git ls-remote origin HEAD` in the same shell |
+| `plan failed … 429 rate_limit_error` | The selected provider is throttling the account, not necessarily an expired login | Wait, change accounts with `pi auth login`, or `flowline model planner provider/model`; then **Retry** |
+| SSH key passphrase prompts, or `Permission denied (publickey)` from a board run | The board process has no unlocked key in its SSH agent | `ssh-add` before `flowline board start`; test `git ls-remote origin HEAD` in the same shell |
