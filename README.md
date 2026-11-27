@@ -2,10 +2,10 @@
 
 Turn a work item into a reviewed, acceptance-tested change on the branch your team chooses, through an agreed plan, a coder, project checks, cold review, your approval and black-box acceptance. The board shows every stage and the human gates.
 
-Install it once; run it in any repository you have checked out.
+Install it once on a host with Docker Sandboxes, Node and Pi ([host setup](docs/setup.md#1-prepare-a-machine-for-sandboxes-once-per-host)); then run it in a repository you have checked out. Until the package is published, run `npm install --global .` from a Flowline checkout instead.
 
 ```sh
-npm i -g flowline-factory
+npm i -g flowline
 cd ~/code/your-project
 flowline setup        # writes .factory/, and says what your machine is still missing
 flowline board start  # background; prints this project's board URL (first free port from 4111)

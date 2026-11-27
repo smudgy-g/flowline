@@ -1,8 +1,8 @@
-# Setting up a factory
+# Set up Flowline
 
-What one person actually did, in the order it worked, on Ubuntu 24.04 with nested KVM. Every step ends in a command whose output tells you it worked; [Troubleshooting](#troubleshooting) lists the failures this produced.
+First prepare the **host machine** once (steps 1–2). Then run `flowline setup` in each project (step 3 onward). The host runs the board and AI agents; each work item's code and checks run in its own sandbox. You do not run the host setup commands inside a sandbox.
 
-The factory is installed once and run inside your repository. Three directories matter, and keeping them apart is the whole design:
+Three directories matter:
 
 |  |  |
 | --- | --- |
@@ -10,49 +10,44 @@ The factory is installed once and run inside your repository. Three directories 
 | `.factory/` in your repo | config, the acceptance adapter, and work items with the local tracker |
 | `~/.local/state/flowline/<project>/` | the run database, logs and records for this checkout; existing installations continue using `~/.local/state/frankenstein/` |
 
-## 1. A machine that can run sandboxes
+## 1. Prepare a machine for sandboxes (once per host)
 
-Docker Sandboxes needs Ubuntu 24.04+ with KVM, Apple-silicon macOS, or Windows 11. Only Ubuntu is exercised here ([what was measured](sandboxes.md)).
+Use a machine supported by [Docker Sandboxes](https://docs.docker.com/ai/sandboxes/install/): Ubuntu 24.04+ with KVM, Apple-silicon macOS, or Windows 11. We have only tested Ubuntu ([test notes](sandboxes.md)). Install `sbx` using Docker's instructions for **your** operating system. On Linux, make sure your user can access `/dev/kvm`; if Linux itself runs inside a VM, enable nested virtualization in that VM's settings. You do not need a CPU-specific check for normal setup.
+
+Then, on the **host** (not in a work-item sandbox):
 
 ```sh
-cat /sys/module/kvm_intel/parameters/nested   # Y, if you are inside a VM
-sbx --version
-sbx policy init deny-all                      # the factory refuses to run without this
+sbx --version             # confirms the install
+sbx login                 # sign in interactively, once
+sbx policy init deny-all  # required network default for Flowline
 ```
 
-`sbx` must be signed in once (`sbx login`) by a person at a terminal; afterwards the factory drives it headless. Give it its own machine or VM: the factory asserts the global deny-all policy before every sandbox, so a daemon shared with unrelated projects will fight it.
+Flowline checks the deny-all policy when starting sandboxes. Use a machine or VM whose `sbx` policy you control; changing its global policy for other projects can break Flowline runs. No `sbx` commands are needed for each work item.
 
-## 2. Node, the factory, and Pi
+## 2. Install Node, Flowline and Pi (once per host)
+
+Install [Node.js 22.18 or newer](https://nodejs.org/en/download) for your operating system, then check `node --version`. Node runs Flowline **on the host**; your project's Node (if it needs one) belongs in its sandbox kit or `commands.setup`, not in this installation.
 
 ```sh
-curl -fsSL https://nodejs.org/dist/v22.19.0/node-v22.19.0-linux-x64.tar.xz -o /tmp/node.tar.xz
-sudo tar -xJf /tmp/node.tar.xz -C /usr/local --strip-components=1
-sudo npm i -g flowline-factory @earendil-works/pi-coding-agent
+npm install --global flowline @earendil-works/pi-coding-agent
 flowline --help
 ```
 
-Sign Pi in (`pi` once interactively), or copy `~/.pi/agent/auth.json` from a machine that is already signed in. `pi --list-models` must list models.
+Until `flowline` is published to npm, run `npm install --global .` from a Flowline checkout instead. Pi runs the planner, coder, tester and reviewers on the host. Sign in interactively with `pi`, then use `pi --list-models` to see your available models. Model calls use the credentials you signed in with; don't paste credentials into project files.
 
-The factory loads Pi as a library from a **managed install layout**, which a plain global install does not have. Point one at it:
+**Pi install layout (currently required):** Flowline loads Pi as a library, and a plain npm global install lacks Pi's managed-install directory. After installing Pi globally, make that directory point to your installation:
 
 ```sh
 pkg=$(npm root -g)/@earendil-works/pi-coding-agent
 ver=$(node -p "require('$pkg/package.json').version")
 mkdir -p ~/.pi/agent/install/releases/$ver/node_modules/@earendil-works
-ln -sfn $pkg ~/.pi/agent/install/releases/$ver/node_modules/@earendil-works/pi-coding-agent
-echo $ver > ~/.pi/agent/install/current-version
+ln -sfn "$pkg" ~/.pi/agent/install/releases/$ver/node_modules/@earendil-works/pi-coding-agent
+echo "$ver" > ~/.pi/agent/install/current-version
 ```
 
-`PI_MANAGED_INSTALL_ROOT` overrides the location. Choose each role's model, as `provider/id` from `pi --list-models`; a bare id means the Codex login:
+You only need to repeat this when upgrading Pi. `flowline setup` checks for the managed install; `PI_MANAGED_INSTALL_ROOT` overrides its location. Flowline provides default models, so you can skip model configuration initially. To choose others later, use `flowline model <role> <provider/model>` in your project (see below).
 
-```sh
-export FACTORY_MODEL_PLANNER=anthropic/claude-opus-5-5
-export FACTORY_MODEL_CODER=anthropic/claude-sonnet-5-5
-export FACTORY_MODEL_REVIEW=anthropic/claude-sonnet-5-5
-export FACTORY_MODEL_TESTER=anthropic/claude-haiku-5-5
-```
-
-Calls are billed to whatever Pi is signed in to. To bill Claude to a separate API key instead of a stored login, put the key in `~/.config/factory/anthropic-api-key`; it is used for that process only and never written to `auth.json`. **That file takes precedence over a newly signed-in Anthropic account**: remove or move it first if switching accounts. Never paste keys or the contents of `auth.json` into a work item.
+To bill Claude to a separate API key instead of Pi's stored login, put the key in `~/.config/factory/anthropic-api-key`; it is used for that process only and never written to `auth.json`. **That file takes precedence over a newly signed-in Anthropic account**: remove or move it first if switching accounts. Never paste keys or the contents of `auth.json` into a work item.
 
 ### Switching model accounts while a run waits
 
@@ -204,6 +199,7 @@ The adapter runs in a **sandbox created with no network**, against `$PROJECT_ARC
 
 ```sh
 mkdir -p .factory/assets
+# Example for Linux x64 only; choose assets for your project's actual runtime and architecture.
 curl -fsSL https://nodejs.org/dist/v22.19.0/node-v22.19.0-linux-x64.tar.gz -o .factory/assets/node-linux-x64.tar.gz
 # setup already ignored .factory/assets/ via .factory/.gitignore; no root .gitignore change needed
 ```
